@@ -33,6 +33,6 @@ func initTesting() {
 		return nil, nil
 	}
 
-	// Initialize certificate IP addresses for testing (same as release)
-	CertIPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	// Initialize proxy certificate IP addresses for testing (same as release)
+	ProxyCertIPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
 }

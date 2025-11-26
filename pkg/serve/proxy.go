@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/afero"
 )
 
-func Start() error {
-	log.Println("Starting MCA...")
+func StartProxy() error {
+	log.Println("Starting MCA Proxy...")
 
 	// Generate TLS certificate and CA
-	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert()
+	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{"localhost"}, conf.ProxyCertIPAddresses)
 	if err != nil {
 		return fmt.Errorf("failed to generate certificates: %w", err)
 	}

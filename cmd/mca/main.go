@@ -13,8 +13,9 @@ import (
 
 func main() {
 	var (
-		injectFlag = flag.Bool("inject", false, "Inject MCA sidecar into Pod manifest")
-		serveFlag  = flag.Bool("serve", false, "Start MCA proxy server")
+		injectFlag  = flag.Bool("inject", false, "Inject MCA sidecar into Pod manifest")
+		proxyFlag   = flag.Bool("proxy", false, "Start MCA proxy server")
+		webhookFlag = flag.Bool("webhook", false, "Start MCA webhook server")
 	)
 	flag.Parse()
 
@@ -23,15 +24,20 @@ func main() {
 		if err := runInject(); err != nil {
 			log.Fatalf("Injection failed: %v", err)
 		}
-	case *serveFlag:
-		if err := runServe(); err != nil {
-			log.Fatalf("Server failed: %v", err)
+	case *proxyFlag:
+		if err := runProxy(); err != nil {
+			log.Fatalf("Proxy server failed: %v", err)
+		}
+	case *webhookFlag:
+		if err := runWebhook(); err != nil {
+			log.Fatalf("Webhook server failed: %v", err)
 		}
 	default:
 		fmt.Fprint(os.Stderr, dedent.Dedent(fmt.Sprintf(`
-			Usage: %s [--inject|--serve]
-			  --inject  Inject MCA sidecar into Pod manifest (stdin/stdout)
-			  --serve   Start MCA proxy server
+			Usage: %s [--inject|--proxy|--webhook]
+			  --inject   Inject MCA sidecar into Pod manifest (stdin/stdout)
+			  --proxy    Start MCA proxy server
+			  --webhook  Start MCA webhook server
 		`, os.Args[0])))
 		os.Exit(1)
 	}
@@ -55,6 +61,10 @@ func runInject() error {
 	return nil
 }
 
-func runServe() error {
-	return serve.Start()
+func runProxy() error {
+	return serve.StartProxy()
+}
+
+func runWebhook() error {
+	return serve.StartWebhook()
 }

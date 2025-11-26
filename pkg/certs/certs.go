@@ -8,9 +8,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"time"
-
-	"github.com/marxus/k8s-mca/conf"
 )
 
 func generateCA() (*rsa.PrivateKey, *x509.Certificate, error) {
@@ -45,7 +44,7 @@ func generateCA() (*rsa.PrivateKey, *x509.Certificate, error) {
 	return key, cert, nil
 }
 
-func GenerateCAAndTLSCert() (tls.Certificate, []byte, error) {
+func GenerateCAAndTLSCert(dnsNames []string, ipAddresses []net.IP) (tls.Certificate, []byte, error) {
 	// Generate CA
 	caKey, caCert, err := generateCA()
 	if err != nil {
@@ -69,8 +68,8 @@ func GenerateCAAndTLSCert() (tls.Certificate, []byte, error) {
 		NotAfter:    time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: conf.CertIPAddresses,
-		DNSNames:    []string{"localhost"},
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddresses,
 	}
 
 	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)

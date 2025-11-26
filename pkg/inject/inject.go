@@ -8,40 +8,38 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-var (
-	mcaContainerYAML = dedent.Dedent(`
-		name: mca
-		image: mca:latest
-		restartPolicy: Always
-		volumeMounts:
-		  - name: kube-api-access-sa
-		    mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-		    readOnly: true
-		  - name: kube-api-access-mca-sa
-		    mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
-	`)
+var mcaContainerYAML = dedent.Dedent(`
+	name: mca
+	image: mca:latest
+	restartPolicy: Always
+	volumeMounts:
+	  - name: kube-api-access-sa
+		mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+		readOnly: true
+	  - name: kube-api-access-mca-sa
+		mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
+`)
 
-	requiredVolumesYAML = dedent.Dedent(`
-		- name: kube-api-access-sa
-		  projected:
-		    sources:
-		      - serviceAccountToken:
-		          path: token
-		          expirationSeconds: 3607
-		      - configMap:
-		          name: kube-root-ca.crt
-		          items:
-		            - key: ca.crt
-		              path: ca.crt
-		      - downwardAPI:
-		          items:
-		            - path: namespace
-		              fieldRef:
-		                fieldPath: metadata.namespace
-		- name: kube-api-access-mca-sa
-		  emptyDir: {}
-	`)
-)
+var requiredVolumesYAML = dedent.Dedent(`
+	- name: kube-api-access-sa
+	  projected:
+		sources:
+		  - serviceAccountToken:
+			  path: token
+			  expirationSeconds: 3607
+		  - configMap:
+			  name: kube-root-ca.crt
+			  items:
+				- key: ca.crt
+				  path: ca.crt
+		  - downwardAPI:
+			  items:
+				- path: namespace
+				  fieldRef:
+					fieldPath: metadata.namespace
+	- name: kube-api-access-mca-sa
+	  emptyDir: {}
+`)
 
 func InjectMCA(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod

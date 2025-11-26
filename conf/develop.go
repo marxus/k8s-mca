@@ -30,8 +30,8 @@ var (
 		).ClientConfig
 	}()
 
-	// CertIPAddresses defines IP addresses included in generated TLS certificates
-	CertIPAddresses = []net.IP{net.IPv4(192, 168, 5, 2)}
+	// ProxyCertIPAddresses defines IP addresses included in generated proxy TLS certificates
+	ProxyCertIPAddresses = []net.IP{net.IPv4(192, 168, 5, 2)}
 
 	// ServerAddr defines the address for the proxy server to bind to
 	// Development uses 0.0.0.0:6443 to allow external access for testing

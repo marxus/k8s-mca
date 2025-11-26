@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/marxus/k8s-mca/conf"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +25,7 @@ var (
 
 func setTestData() error {
 	once.Do(func() {
-		tlsCert, caCertPEM, err := GenerateCAAndTLSCert()
+		tlsCert, caCertPEM, err := GenerateCAAndTLSCert([]string{"localhost"}, conf.ProxyCertIPAddresses)
 		if err != nil {
 			testErr = err
 			return
