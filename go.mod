@@ -3,7 +3,6 @@ module github.com/marxus/k8s-mca
 go 1.24.3
 
 require (
-	github.com/lithammer/dedent v1.1.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.34.2

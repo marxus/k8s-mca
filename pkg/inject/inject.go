@@ -3,50 +3,69 @@ package inject
 import (
 	"fmt"
 
-	"github.com/lithammer/dedent"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
 
-var mcaContainerYAML = dedent.Dedent(`
-	name: mca
-	image: mca:latest
-	restartPolicy: Always
-	volumeMounts:
-	  - name: kube-api-access-sa
-		mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-		readOnly: true
-	  - name: kube-api-access-mca-sa
-		mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
-`)
+var (
+	mcaContainerYAML = `
+name: mca
+image: mca:latest
+restartPolicy: Always
+volumeMounts:
+  - name: kube-api-access-sa
+    mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+    readOnly: true
+  - name: kube-api-access-mca-sa
+    mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
+`
 
-var requiredVolumesYAML = dedent.Dedent(`
-	- name: kube-api-access-sa
-	  projected:
-		sources:
-		  - serviceAccountToken:
-			  path: token
-			  expirationSeconds: 3607
-		  - configMap:
-			  name: kube-root-ca.crt
-			  items:
-				- key: ca.crt
-				  path: ca.crt
-		  - downwardAPI:
-			  items:
-				- path: namespace
-				  fieldRef:
-					fieldPath: metadata.namespace
-	- name: kube-api-access-mca-sa
-	  emptyDir: {}
-`)
+	requiredVolumesYAML = `
+- name: kube-api-access-sa
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: token
+          expirationSeconds: 3607
+      - configMap:
+          name: kube-root-ca.crt
+          items:
+            - key: ca.crt
+              path: ca.crt
+      - downwardAPI:
+          items:
+            - path: namespace
+              fieldRef:
+                fieldPath: metadata.namespace
+- name: kube-api-access-mca-sa
+  emptyDir: {}
+`
+)
 
-func InjectMCA(podYAML []byte) ([]byte, error) {
+func InjectViaCLI(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod
 	if err := yaml.Unmarshal(podYAML, &pod); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pod: %w", err)
 	}
 
+	mutatedPod, err := injectMCA(pod)
+	if err != nil {
+		return nil, err
+	}
+
+	mutatedPodYAML, err := yaml.Marshal(&mutatedPod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pod: %w", err)
+	}
+
+	return mutatedPodYAML, nil
+}
+
+func InjectViaWebhook(pod corev1.Pod) (corev1.Pod, error) {
+	return injectMCA(pod)
+}
+
+func injectMCA(pod corev1.Pod) (corev1.Pod, error) {
 	// Set automountServiceAccountToken to false
 	automount := false
 	pod.Spec.AutomountServiceAccountToken = &automount
@@ -63,7 +82,7 @@ func InjectMCA(podYAML []byte) ([]byte, error) {
 	// TODO: need to decide: should check and respect explicit user configuration for automountServiceAccountToken inorder to decide if MCA should have the `kube-api-access-sa` volume or not?
 	var mcaContainer corev1.Container
 	if err := yaml.Unmarshal([]byte(mcaContainerYAML), &mcaContainer); err != nil {
-		return nil, fmt.Errorf("failed to create MCA container: %w", err)
+		return corev1.Pod{}, fmt.Errorf("failed to create MCA container: %w", err)
 	}
 
 	// Prepend MCA as first init container
@@ -83,16 +102,11 @@ func InjectMCA(podYAML []byte) ([]byte, error) {
 
 	// Ensure required volumes exist
 	if err := addRequiredVolumes(&pod); err != nil {
-		return nil, err
+		return corev1.Pod{}, err
 	}
 
 	// Marshal back to YAML
-	result, err := yaml.Marshal(&pod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal pod: %w", err)
-	}
-
-	return result, nil
+	return pod, nil
 }
 
 func addEnvVars(container *corev1.Container) {

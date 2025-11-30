@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/lithammer/dedent"
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
 	"github.com/marxus/k8s-mca/pkg/webhook"
@@ -16,32 +15,32 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-var mutatingConfigYAML = dedent.Dedent(`
-    apiVersion: admissionregistration.k8s.io/v1
-    kind: MutatingWebhookConfiguration
-    metadata:
-      name: mca-webhook
-    webhooks:
-      - name: mca-webhook.k8s.io
-        clientConfig:
-          service:
-            name: mca-webhook
-            namespace: default
-            path: /mutate
-          caBundle: <CA_BUNDLE>
-        rules:
-          - operations: ["CREATE"]
-            apiGroups: [""]
-            apiVersions: ["v1"]
-            resources: ["pods"]
-        objectSelector:
-          matchLabels:
-            mca.k8s.io/inject: "true"
-        admissionReviewVersions: ["v1", "v1beta1"]
-        sideEffects: None
-        failurePolicy: Fail
-        reinvocationPolicy: IfNeeded
-`)
+var mutatingConfigYAML = `
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mca-webhook
+webhooks:
+  - name: mca-webhook.k8s.io
+    clientConfig:
+      service:
+        name: mca-webhook
+        namespace: default
+        path: /mutate
+      caBundle: <CA_BUNDLE>
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    objectSelector:
+      matchLabels:
+        mca.k8s.io/inject: "true"
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    failurePolicy: Fail
+    reinvocationPolicy: IfNeeded
+`
 
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")

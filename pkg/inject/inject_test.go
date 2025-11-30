@@ -4,27 +4,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lithammer/dedent"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
 
-var testPodYAML = dedent.Dedent(`
-	apiVersion: v1
-	kind: Pod
-	metadata:
-	  name: test-pod
-	spec:
-	  containers:
-	    - name: app
-	      image: nginx
-	      env:
-	        - name: KUBERNETES_SERVICE_HOST
-	          value: "kubernetes.default.svc.cluster.local"
-`)
+var testPodYAML = `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+    - name: app
+      image: nginx
+      env:
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc.cluster.local"
+`
 
 func TestInjectMCA_Success(t *testing.T) {
-	result, err := InjectMCA([]byte(testPodYAML))
+	result, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -35,7 +34,7 @@ func TestInjectMCA_Success(t *testing.T) {
 }
 
 func TestInjectMCA_HasMCAInitContainer(t *testing.T) {
-	result, err := InjectMCA([]byte(testPodYAML))
+	result, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -59,7 +58,7 @@ func TestInjectMCA_HasMCAInitContainer(t *testing.T) {
 }
 
 func TestInjectMCA_AddsEnvVars(t *testing.T) {
-	result, err := InjectMCA([]byte(testPodYAML))
+	result, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -84,7 +83,7 @@ func TestInjectMCA_AddsEnvVars(t *testing.T) {
 }
 
 func TestInjectMCA_AddsVolumes(t *testing.T) {
-	result, err := InjectMCA([]byte(testPodYAML))
+	result, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -109,7 +108,7 @@ func TestInjectMCA_AddsVolumes(t *testing.T) {
 }
 
 func TestInjectMCA_AddsVolumeMount(t *testing.T) {
-	result, err := InjectMCA([]byte(testPodYAML))
+	result, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -137,13 +136,13 @@ func TestInjectMCA_AddsVolumeMount(t *testing.T) {
 
 func TestInjectMCA_Idempotent(t *testing.T) {
 	// First injection
-	result1, err := InjectMCA([]byte(testPodYAML))
+	result1, err := InjectViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("First injection failed: %v", err)
 	}
 
 	// Second injection
-	result2, err := InjectMCA(result1)
+	result2, err := InjectViaCLI(result1)
 	if err != nil {
 		t.Fatalf("Second injection failed: %v", err)
 	}
@@ -174,7 +173,7 @@ func TestInjectMCA_Idempotent(t *testing.T) {
 
 func TestInjectMCA_InvalidYAML(t *testing.T) {
 	invalidYAML := "invalid: yaml: content: ["
-	_, err := InjectMCA([]byte(invalidYAML))
+	_, err := InjectViaCLI([]byte(invalidYAML))
 	if err == nil {
 		t.Error("Should fail with invalid YAML")
 	}

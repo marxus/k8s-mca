@@ -6,10 +6,16 @@ import (
 	"log"
 	"os"
 
-	"github.com/lithammer/dedent"
 	"github.com/marxus/k8s-mca/pkg/inject"
 	"github.com/marxus/k8s-mca/pkg/serve"
 )
+
+var cliUsage = `
+Usage: %s [--inject|--proxy|--webhook]
+  --inject   Inject MCA sidecar into Pod manifest (stdin/stdout)
+  --proxy    Start MCA proxy server
+  --webhook  Start MCA webhook server
+`
 
 func main() {
 	var (
@@ -33,12 +39,7 @@ func main() {
 			log.Fatalf("Webhook server failed: %v", err)
 		}
 	default:
-		fmt.Fprint(os.Stderr, dedent.Dedent(fmt.Sprintf(`
-			Usage: %s [--inject|--proxy|--webhook]
-			  --inject   Inject MCA sidecar into Pod manifest (stdin/stdout)
-			  --proxy    Start MCA proxy server
-			  --webhook  Start MCA webhook server
-		`, os.Args[0])))
+		fmt.Fprint(os.Stderr, fmt.Sprintf(cliUsage, os.Args[0]))
 		os.Exit(1)
 	}
 }
@@ -49,7 +50,7 @@ func runInject() error {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	output, err := inject.InjectMCA(input)
+	output, err := inject.InjectViaCLI(input)
 	if err != nil {
 		return fmt.Errorf("failed to inject MCA: %w", err)
 	}
