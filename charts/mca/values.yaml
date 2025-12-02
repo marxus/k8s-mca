@@ -1,0 +1,3 @@
+image:
+  repository: ghcr.io/marxus/k8s-mca
+  tag: latest

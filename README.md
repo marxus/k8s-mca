@@ -20,7 +20,7 @@ The final goal of MCA is to enable **multi-cluster operations** by routing diffe
 
 ```bash
 # Start MCA proxy server
-export K8S_MCA_CTX=my-kube-context
+export MCA_K8S_CTX=my-kube-context
 go run cmd/mca/main.go --proxy
 
 ./kubectl.sh get pods -A # Test with MCA generated ServiceAccount

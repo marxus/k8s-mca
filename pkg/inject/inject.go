@@ -3,6 +3,7 @@ package inject
 import (
 	"fmt"
 
+	"github.com/marxus/k8s-mca/conf"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -10,8 +11,10 @@ import (
 var (
 	mcaContainerYAML = `
 name: mca
-image: mca:latest
 restartPolicy: Always
+imagePullPolicy: Always # TODO: remove this in the end
+securityContext: { runAsNonRoot: true, runAsUser: 999 }
+args: [--proxy]
 volumeMounts:
   - name: kube-api-access-sa
     mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -84,6 +87,7 @@ func injectMCA(pod corev1.Pod) (corev1.Pod, error) {
 	if err := yaml.Unmarshal([]byte(mcaContainerYAML), &mcaContainer); err != nil {
 		return corev1.Pod{}, fmt.Errorf("failed to create MCA container: %w", err)
 	}
+	mcaContainer.Image = conf.MCAImage
 
 	// Prepend MCA as first init container
 	pod.Spec.InitContainers = append([]corev1.Container{mcaContainer}, filteredInitContainers...)
@@ -138,17 +142,16 @@ func addVolumeMount(container *corev1.Container) {
 	mountName := "kube-api-access-mca-sa"
 	mountPath := "/var/run/secrets/kubernetes.io/serviceaccount"
 
-	// Check if mount already exists
-	for i := range container.VolumeMounts {
-		if container.VolumeMounts[i].Name == mountName {
-			container.VolumeMounts[i].MountPath = mountPath
-			container.VolumeMounts[i].ReadOnly = true
-			return
+	// Remove any existing mount with the same name to avoid duplicates
+	var filteredMounts []corev1.VolumeMount
+	for _, mount := range container.VolumeMounts {
+		if mount.MountPath != mountPath {
+			filteredMounts = append(filteredMounts, mount)
 		}
 	}
 
-	// Add new mount
-	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+	// Replace volume mounts with filtered + required mount
+	container.VolumeMounts = append(filteredMounts, corev1.VolumeMount{
 		Name:      mountName,
 		MountPath: mountPath,
 		ReadOnly:  true,
@@ -169,10 +172,9 @@ func addRequiredVolumes(pod *corev1.Pod) error {
 	if err := yaml.Unmarshal([]byte(requiredVolumesYAML), &requiredVolumes); err != nil {
 		return fmt.Errorf("failed to create required volumes: %w", err)
 	}
-	filteredVolumes = append(filteredVolumes, requiredVolumes...)
 
 	// Replace volumes with filtered + required volumes
-	pod.Spec.Volumes = filteredVolumes
+	pod.Spec.Volumes = append(filteredVolumes, requiredVolumes...)
 
 	return nil
 }

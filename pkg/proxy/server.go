@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -45,6 +46,7 @@ func (s *Server) Start() error {
 
 	// Create handler that removes Authorization header
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Proxying request: %s %s", r.Method, r.URL.Path)
 		r.Header.Del("Authorization")
 		reverseProxy.ServeHTTP(w, r)
 	})

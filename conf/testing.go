@@ -23,10 +23,8 @@ func init() {
 
 func initTesting() {
 	// Initialize in-memory filesystem for test isolation
-	func() {
-		FS = afero.NewMemMapFs()
-		initFS()
-	}()
+	FS = afero.NewMemMapFs()
+	initFS()
 
 	// Initialize Kubernetes config for testing context
 	InClusterConfig = func() (*rest.Config, error) {

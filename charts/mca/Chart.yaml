@@ -1,0 +1,5 @@
+apiVersion: v2
+name: mca
+description: Multi Cluster Adapter - Kubernetes sidecar MITM proxy
+version: 0.1.0
+appVersion: "latest"

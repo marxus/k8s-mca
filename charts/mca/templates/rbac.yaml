@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mca-webhook
+rules:
+- apiGroups: [admissionregistration.k8s.io]
+  resources: [mutatingwebhookconfigurations]
+  verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mca-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mca-webhook
+subjects:
+- kind: ServiceAccount
+  name: mca-webhook
+  namespace: default

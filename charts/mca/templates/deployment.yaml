@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mca-webhook
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mca-webhook
+  template:
+    metadata:
+      labels:
+        app: mca-webhook
+    spec:
+      serviceAccountName: mca-webhook
+      containers:
+      - name: mca-webhook
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: Always # TODO: remove this in the end
+        securityContext: { runAsNonRoot: true, runAsUser: 999 }
+        args: [--webhook]
+        env:
+          - name: MCA_IMAGE
+            value: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          - name: MCA_WEBHOOK
+            value: mca-webhook

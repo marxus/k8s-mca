@@ -5,6 +5,7 @@ package conf
 
 import (
 	"net"
+	"os"
 
 	"github.com/spf13/afero"
 	"k8s.io/client-go/rest"
@@ -23,3 +24,7 @@ var ProxyCertIPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
 // ServerAddr defines the address for the proxy server to bind to
 // Production uses 127.0.0.1:6443 for sidecar deployment (localhost-only access)
 var ServerAddr = "127.0.0.1:6443"
+
+var MCAImage = os.Getenv("MCA_IMAGE")
+
+var MCAWebhook = os.Getenv("MCA_WEBHOOK")

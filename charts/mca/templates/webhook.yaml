@@ -1,0 +1,23 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mca-webhook
+webhooks:
+  - name: mca-webhook.k8s.io
+    clientConfig:
+      service:
+        name: mca-webhook
+        namespace: default
+        path: /mutate
+    rules:
+      - operations: [CREATE]
+        apiGroups: [""]
+        apiVersions: [v1]
+        resources: [pods]
+    objectSelector:
+      matchLabels:
+        mca.k8s.io/inject: "true"
+    admissionReviewVersions: [v1, v1beta1]
+    sideEffects: None
+    failurePolicy: Fail
+    reinvocationPolicy: IfNeeded
