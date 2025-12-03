@@ -50,7 +50,7 @@ func runInject() error {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	output, err := inject.InjectViaCLI(input)
+	output, err := inject.ViaCLI(input)
 	if err != nil {
 		return fmt.Errorf("failed to inject MCA: %w", err)
 	}

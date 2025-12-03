@@ -3,11 +3,11 @@ kind: MutatingWebhookConfiguration
 metadata:
   name: mca-webhook
 webhooks:
-  - name: mca-webhook.k8s.io
+  - name: webhook.mca.k8s.io
     clientConfig:
       service:
         name: mca-webhook
-        namespace: default
+        namespace: {{ .Release.Namespace }}
         path: /mutate
     rules:
       - operations: [CREATE]

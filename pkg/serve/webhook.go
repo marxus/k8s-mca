@@ -9,6 +9,7 @@ import (
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
 	"github.com/marxus/k8s-mca/pkg/webhook"
+	"github.com/spf13/afero"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -17,15 +18,12 @@ import (
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")
 
-	// Generate webhook TLS certificate with service DNS names
-	webhookCertDNSNames := []string{
-		"mca-webhook",
-		"mca-webhook.default",
-		"mca-webhook.default.svc",
-		"mca-webhook.default.svc.cluster.local",
+	namespace, err := afero.ReadFile(conf.FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return fmt.Errorf("failed to read namespace file: %w", err)
 	}
 
-	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert(webhookCertDNSNames, nil)
+	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{fmt.Sprintf("%s.%s.svc", conf.WebhookName, namespace)}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate webhook certificates: %w", err)
 	}
@@ -60,7 +58,7 @@ func applyMutatingConfig(caCertPEM []byte) error {
 
 	_, err = clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Patch(
 		ctx,
-		conf.MCAWebhook,
+		conf.WebhookName,
 		types.JSONPatchType,
 		[]byte(fmt.Sprintf(`[{ "op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value": "%s" }]`, base64.StdEncoding.EncodeToString(caCertPEM))),
 		metav1.PatchOptions{},
@@ -69,6 +67,6 @@ func applyMutatingConfig(caCertPEM []byte) error {
 		return fmt.Errorf("failed to patch mutating webhook: %w", err)
 	}
 
-	log.Printf("Patched mutating webhook: %s", conf.MCAWebhook)
+	log.Printf("Patched mutating webhook: %s", conf.WebhookName)
 	return nil
 }

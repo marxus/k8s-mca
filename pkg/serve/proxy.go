@@ -55,12 +55,12 @@ func writeNamespaceFile() error {
 	realNamespacePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 	mcaNamespacePath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/namespace"
 
-	namespaceContent, err := afero.ReadFile(conf.FS, realNamespacePath)
+	namespace, err := afero.ReadFile(conf.FS, realNamespacePath)
 	if err != nil {
 		return fmt.Errorf("failed to read namespace file: %w (hint: ensure automountServiceAccountToken is set to true in the pod manifest - MCA respects this flag to project the ServiceAccount)", err)
 	}
 
-	if err := afero.WriteFile(conf.FS, mcaNamespacePath, namespaceContent, 0644); err != nil {
+	if err := afero.WriteFile(conf.FS, mcaNamespacePath, namespace, 0644); err != nil {
 		return fmt.Errorf("failed to write namespace file: %w", err)
 	}
 

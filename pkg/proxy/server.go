@@ -56,7 +56,7 @@ func (s *Server) Start() error {
 	}
 
 	server := &http.Server{
-		Addr:      conf.ServerAddr,
+		Addr:      conf.ProxyServerAddr,
 		Handler:   handler,
 		TLSConfig: tlsConfig,
 	}

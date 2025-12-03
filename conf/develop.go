@@ -22,7 +22,7 @@ var (
 	InClusterConfig = func() func() (*rest.Config, error) {
 		context := os.Getenv("MCA_K8S_CTX")
 		if context == "" {
-			context = "mca-develop"
+			context = "mca-k8s-ctx"
 		}
 		return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 			clientcmd.NewDefaultClientConfigLoadingRules(),
@@ -33,13 +33,13 @@ var (
 	// ProxyCertIPAddresses defines IP addresses included in generated proxy TLS certificates
 	ProxyCertIPAddresses = []net.IP{net.IPv4(192, 168, 5, 2)}
 
-	// ServerAddr defines the address for the proxy server to bind to
+	// ProxyServerAddr defines the address for the proxy server to bind to
 	// Development uses 0.0.0.0:6443 to allow external access for testing
-	ServerAddr = "0.0.0.0:6443"
+	ProxyServerAddr = "0.0.0.0:6443"
 
-	MCAImage = "k8s-mca:latest"
+	ProxyImage = "mca:latest"
 
-	MCAWebhook = "mca-webhook"
+	WebhookName = "mca-webhook"
 )
 
 var (

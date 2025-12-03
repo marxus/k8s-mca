@@ -23,7 +23,7 @@ spec:
 `
 
 func TestInjectMCA_Success(t *testing.T) {
-	result, err := InjectViaCLI([]byte(testPodYAML))
+	result, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestInjectMCA_Success(t *testing.T) {
 }
 
 func TestInjectMCA_HasMCAInitContainer(t *testing.T) {
-	result, err := InjectViaCLI([]byte(testPodYAML))
+	result, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestInjectMCA_HasMCAInitContainer(t *testing.T) {
 		t.Fatal("No init containers found")
 	}
 
-	if pod.Spec.InitContainers[0].Name != "mca" {
+	if pod.Spec.InitContainers[0].Name != "mca-proxy" {
 		t.Error("First init container should be 'mca'")
 	}
 
@@ -58,7 +58,7 @@ func TestInjectMCA_HasMCAInitContainer(t *testing.T) {
 }
 
 func TestInjectMCA_AddsEnvVars(t *testing.T) {
-	result, err := InjectViaCLI([]byte(testPodYAML))
+	result, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestInjectMCA_AddsEnvVars(t *testing.T) {
 }
 
 func TestInjectMCA_AddsVolumes(t *testing.T) {
-	result, err := InjectViaCLI([]byte(testPodYAML))
+	result, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestInjectMCA_AddsVolumes(t *testing.T) {
 }
 
 func TestInjectMCA_AddsVolumeMount(t *testing.T) {
-	result, err := InjectViaCLI([]byte(testPodYAML))
+	result, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("InjectMCA failed: %v", err)
 	}
@@ -136,13 +136,13 @@ func TestInjectMCA_AddsVolumeMount(t *testing.T) {
 
 func TestInjectMCA_Idempotent(t *testing.T) {
 	// First injection
-	result1, err := InjectViaCLI([]byte(testPodYAML))
+	result1, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("First injection failed: %v", err)
 	}
 
 	// Second injection
-	result2, err := InjectViaCLI(result1)
+	result2, err := ViaCLI(result1)
 	if err != nil {
 		t.Fatalf("Second injection failed: %v", err)
 	}
@@ -166,14 +166,14 @@ func TestInjectMCA_Idempotent(t *testing.T) {
 	}
 
 	// MCA should still be first
-	if pod2.Spec.InitContainers[0].Name != "mca" {
+	if pod2.Spec.InitContainers[0].Name != "mca-proxy" {
 		t.Error("MCA should remain first init container")
 	}
 }
 
 func TestInjectMCA_InvalidYAML(t *testing.T) {
 	invalidYAML := "invalid: yaml: content: ["
-	_, err := InjectViaCLI([]byte(invalidYAML))
+	_, err := ViaCLI([]byte(invalidYAML))
 	if err == nil {
 		t.Error("Should fail with invalid YAML")
 	}

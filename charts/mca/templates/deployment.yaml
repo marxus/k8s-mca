@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mca-webhook
-  namespace: default
 spec:
   replicas: 1
   selector:
@@ -21,7 +20,7 @@ spec:
         securityContext: { runAsNonRoot: true, runAsUser: 999 }
         args: [--webhook]
         env:
-          - name: MCA_IMAGE
+          - name: MCA_PROXY_IMAGE
             value: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          - name: MCA_WEBHOOK
+          - name: MCA_WEBHOOK_NAME
             value: mca-webhook

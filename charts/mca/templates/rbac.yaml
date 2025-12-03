@@ -18,4 +18,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: mca-webhook
-  namespace: default
+  namespace: {{ .Release.Namespace }}

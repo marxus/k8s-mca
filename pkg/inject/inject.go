@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	mcaContainerYAML = `
-name: mca
+	proxyContainerYAML = `
+name: mca-proxy
 restartPolicy: Always
 imagePullPolicy: Always # TODO: remove this in the end
 securityContext: { runAsNonRoot: true, runAsUser: 999 }
@@ -45,13 +45,13 @@ volumeMounts:
 `
 )
 
-func InjectViaCLI(podYAML []byte) ([]byte, error) {
+func ViaCLI(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod
 	if err := yaml.Unmarshal(podYAML, &pod); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pod: %w", err)
 	}
 
-	mutatedPod, err := injectMCA(pod)
+	mutatedPod, err := injectProxy(pod)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +64,11 @@ func InjectViaCLI(podYAML []byte) ([]byte, error) {
 	return mutatedPodYAML, nil
 }
 
-func InjectViaWebhook(pod corev1.Pod) (corev1.Pod, error) {
-	return injectMCA(pod)
+func ViaWebhook(pod corev1.Pod) (corev1.Pod, error) {
+	return injectProxy(pod)
 }
 
-func injectMCA(pod corev1.Pod) (corev1.Pod, error) {
+func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
 	// Set automountServiceAccountToken to false
 	automount := false
 	pod.Spec.AutomountServiceAccountToken = &automount
@@ -76,21 +76,21 @@ func injectMCA(pod corev1.Pod) (corev1.Pod, error) {
 	// Remove any existing MCA init containers
 	var filteredInitContainers []corev1.Container
 	for _, container := range pod.Spec.InitContainers {
-		if container.Name != "mca" {
+		if container.Name != "mca-proxy" {
 			filteredInitContainers = append(filteredInitContainers, container)
 		}
 	}
 
 	// Create MCA init container
 	// TODO: need to decide: should check and respect explicit user configuration for automountServiceAccountToken inorder to decide if MCA should have the `kube-api-access-sa` volume or not?
-	var mcaContainer corev1.Container
-	if err := yaml.Unmarshal([]byte(mcaContainerYAML), &mcaContainer); err != nil {
+	var proxyContainer corev1.Container
+	if err := yaml.Unmarshal([]byte(proxyContainerYAML), &proxyContainer); err != nil {
 		return corev1.Pod{}, fmt.Errorf("failed to create MCA container: %w", err)
 	}
-	mcaContainer.Image = conf.MCAImage
+	proxyContainer.Image = conf.ProxyImage
 
 	// Prepend MCA as first init container
-	pod.Spec.InitContainers = append([]corev1.Container{mcaContainer}, filteredInitContainers...)
+	pod.Spec.InitContainers = append([]corev1.Container{proxyContainer}, filteredInitContainers...)
 
 	// Add environment variables to all non-MCA init containers
 	for i := range filteredInitContainers {

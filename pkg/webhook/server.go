@@ -101,7 +101,7 @@ func (s *Server) mutate(admissionReview *admissionv1.AdmissionReview) *admission
 		return s.mutateErr(req.UID, err, "Failed to unmarshal pod")
 	}
 
-	mutatedPod, err := inject.InjectViaWebhook(pod)
+	mutatedPod, err := inject.ViaWebhook(pod)
 	if err != nil {
 		return s.mutateErr(req.UID, err, "Failed to inject MCA")
 	}
