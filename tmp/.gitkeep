@@ -1,4 +1,0 @@
-# This file ensures the tmp/ directory is committed to git
-# while ignoring all other files in this directory.
-# The tmp/ directory is used by the development configuration
-# for sandboxed filesystem operations.

@@ -43,7 +43,7 @@ func initDevelop() {
 }
 
 func initFS() {
-	FS.MkdirAll(ServiceAccountPath, 0755)
-	afero.WriteFile(FS, filepath.Join(ServiceAccountPath, "namespace"), []byte("default"), 0644)
-	FS.MkdirAll(MCAServiceAccountPath, 0755)
+	FS.MkdirAll("/var/run/secrets/kubernetes.io/serviceaccount", 0755)
+	afero.WriteFile(FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace", []byte("default"), 0644)
+	FS.MkdirAll("/var/run/secrets/kubernetes.io/mca-serviceaccount", 0755)
 }

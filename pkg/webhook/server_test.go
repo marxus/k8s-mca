@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,237 +17,203 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func TestServer_handleHealth(t *testing.T) {
-	server := &Server{}
-	req := httptest.NewRequest("GET", "/health", nil)
-	w := httptest.NewRecorder()
-
-	server.handleHealth(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+func TestNewServer(t *testing.T) {
+	cert := tls.Certificate{
+		Certificate: [][]byte{{1, 2, 3}},
 	}
 
-	if w.Body.String() != "OK" {
-		t.Errorf("Expected body 'OK', got %q", w.Body.String())
-	}
+	server := NewServer(cert)
+
+	require.NotNil(t, server)
+	assert.Equal(t, cert, server.tlsCert)
 }
 
-func TestServer_handleMutate_InvalidJSON(t *testing.T) {
-	server := &Server{}
-	invalidJSON := "invalid json"
-	req := httptest.NewRequest("POST", "/mutate", bytes.NewBufferString(invalidJSON))
-	w := httptest.NewRecorder()
+func TestServer_HandleHealth(t *testing.T) {
+	cert := tls.Certificate{}
+	server := NewServer(cert)
 
-	server.handleMutate(w, req)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	recorder := httptest.NewRecorder()
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
+	server.handleHealth(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "OK", recorder.Body.String())
 }
 
-func TestServer_mutate_NonPodResource(t *testing.T) {
-	server := &Server{}
-
-	configMap := &corev1.ConfigMap{
+func TestServer_HandleMutate_ValidRequest(t *testing.T) {
+	pod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-configmap",
-		},
-	}
-	configMapBytes, _ := json.Marshal(configMap)
-
-	admissionReview := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Kind: metav1.GroupVersionKind{
-				Kind: "ConfigMap",
-			},
-			Object: runtime.RawExtension{Raw: configMapBytes},
-		},
-	}
-
-	response := server.mutate(admissionReview)
-
-	if !response.Response.Allowed {
-		t.Error("Non-pod resources should be allowed")
-	}
-
-	if response.Response.UID != types.UID("test-uid") {
-		t.Error("UID should be preserved in response")
-	}
-}
-
-func TestServer_mutate_ValidPod(t *testing.T) {
-	server := &Server{}
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-pod",
+			Name:      "test-pod",
+			Namespace: "default",
 		},
 		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{Name: "app", Image: "nginx"},
-			},
-		},
-	}
-
-	podBytes, _ := json.Marshal(pod)
-
-	admissionReview := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Kind: metav1.GroupVersionKind{
-				Kind: "Pod",
-			},
-			Object: runtime.RawExtension{Raw: podBytes},
-		},
-	}
-
-	response := server.mutate(admissionReview)
-
-	if !response.Response.Allowed {
-		t.Error("Valid pods should be allowed")
-	}
-
-	if response.Response.PatchType == nil {
-		t.Error("Patch should be applied to valid pods")
-	}
-
-	if *response.Response.PatchType != admissionv1.PatchTypeJSONPatch {
-		t.Error("Patch type should be JSONPatch")
-	}
-}
-
-func TestServer_mutate_MalformedJSON(t *testing.T) {
-	server := &Server{}
-
-	malformedJSON := []byte(`{invalid json}`)
-
-	admissionReview := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Kind: metav1.GroupVersionKind{
-				Kind: "Pod",
-			},
-			Object: runtime.RawExtension{Raw: malformedJSON},
-		},
-	}
-
-	response := server.mutate(admissionReview)
-
-	if response.Response.Allowed {
-		t.Error("Malformed JSON should not be allowed")
-	}
-
-	if response.Response.Result == nil {
-		t.Error("Error response should have result")
-	}
-
-	if response.Response.UID != types.UID("test-uid") {
-		t.Error("UID should be preserved in error response")
-	}
-}
-
-func TestServer_createErrorResponse(t *testing.T) {
-	server := &Server{}
-	testUID := types.UID("test-uid")
-	testErr := fmt.Errorf("test error")
-	message := "Test message"
-
-	response := server.mutateErr(testUID, testErr, message)
-
-	if response.Response.UID != testUID {
-		t.Error("UID should be preserved")
-	}
-
-	if response.Response.Allowed {
-		t.Error("Error response should not be allowed")
-	}
-
-	if response.Response.Result == nil {
-		t.Error("Error response should have result")
-	}
-
-	expectedMessage := "Test message: test error"
-	if response.Response.Result.Message != expectedMessage {
-		t.Errorf("Expected message %q, got %q", expectedMessage, response.Response.Result.Message)
-	}
-
-	if response.TypeMeta.APIVersion != "admission.k8s.io/v1" {
-		t.Error("APIVersion should be admission.k8s.io/v1")
-	}
-
-	if response.TypeMeta.Kind != "AdmissionReview" {
-		t.Error("Kind should be AdmissionReview")
-	}
-}
-
-func TestServer_generateJSONPatch(t *testing.T) {
-	server := &Server{}
-
-	mutatedPod := corev1.Pod{
-		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: func() *bool { b := false; return &b }(),
-			InitContainers: []corev1.Container{
-				{Name: "mca", Image: "mca:latest"},
-			},
 			Containers: []corev1.Container{
 				{
 					Name:  "app",
 					Image: "nginx",
-					Env: []corev1.EnvVar{
-						{Name: "KUBERNETES_SERVICE_HOST", Value: "127.0.0.1"},
-						{Name: "KUBERNETES_SERVICE_PORT", Value: "6443"},
-					},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: "kube-api-access-mca-sa", MountPath: "/var/run/secrets/kubernetes.io/serviceaccount"},
+						{
+							Name:      "kube-api-access",
+							MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+						},
 					},
 				},
-			},
-			Volumes: []corev1.Volume{
-				{Name: "kube-api-access-sa"},
-				{Name: "kube-api-access-mca-sa"},
 			},
 		},
 	}
 
-	patches, err := server.generateJSONPatch(mutatedPod)
-	if err != nil {
-		t.Fatalf("generateJSONPatch failed: %v", err)
+	podJSON, err := json.Marshal(pod)
+	require.NoError(t, err)
+
+	admissionReview := admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "admission.k8s.io/v1",
+			Kind:       "AdmissionReview",
+		},
+		Request: &admissionv1.AdmissionRequest{
+			UID: types.UID("test-uid"),
+			Object: runtime.RawExtension{
+				Raw: podJSON,
+			},
+		},
 	}
 
-	var patchList []map[string]interface{}
-	if err := json.Unmarshal(patches, &patchList); err != nil {
-		t.Fatalf("Failed to unmarshal patches: %v", err)
-	}
+	body, err := json.Marshal(admissionReview)
+	require.NoError(t, err)
 
-	if len(patchList) == 0 {
-		t.Error("Patches should not be empty")
-	}
-
-	found := false
-	for _, patch := range patchList {
-		if patch["op"] == "replace" && patch["path"] == "/spec" {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		t.Error("Should contain a patch that replaces /spec")
-	}
-}
-
-func TestNewServer(t *testing.T) {
 	cert := tls.Certificate{}
 	server := NewServer(cert)
 
-	if server == nil {
-		t.Error("NewServer should return a server instance")
+	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+
+	server.handleMutate(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+
+	var responseReview admissionv1.AdmissionReview
+	err = json.Unmarshal(recorder.Body.Bytes(), &responseReview)
+	require.NoError(t, err)
+
+	assert.NotNil(t, responseReview.Response)
+	assert.True(t, responseReview.Response.Allowed)
+	assert.Equal(t, types.UID("test-uid"), responseReview.Response.UID)
+	assert.NotNil(t, responseReview.Response.PatchType)
+	assert.NotEmpty(t, responseReview.Response.Patch)
+}
+
+func TestServer_HandleMutate_InvalidJSON(t *testing.T) {
+	cert := tls.Certificate{}
+	server := NewServer(cert)
+
+	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader([]byte("invalid json")))
+	recorder := httptest.NewRecorder()
+
+	server.handleMutate(recorder, req)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Failed to unmarshal admission review")
+}
+
+func TestServer_Mutate_Success(t *testing.T) {
+	pod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "app",
+					Image: "nginx",
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "kube-api-access",
+							MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+						},
+					},
+				},
+			},
+		},
 	}
 
-	if server.tlsCert.Certificate == nil && cert.Certificate == nil {
-	} else if len(server.tlsCert.Certificate) != len(cert.Certificate) {
-		t.Error("TLS certificate should be preserved")
+	podJSON, err := json.Marshal(pod)
+	require.NoError(t, err)
+
+	admissionReview := &admissionv1.AdmissionReview{
+		Request: &admissionv1.AdmissionRequest{
+			UID: types.UID("test-uid"),
+			Object: runtime.RawExtension{
+				Raw: podJSON,
+			},
+		},
 	}
+
+	cert := tls.Certificate{}
+	server := NewServer(cert)
+
+	response := server.mutate(admissionReview)
+
+	require.NotNil(t, response)
+	assert.Equal(t, "admission.k8s.io/v1", response.APIVersion)
+	assert.Equal(t, "AdmissionReview", response.Kind)
+	require.NotNil(t, response.Response)
+	assert.True(t, response.Response.Allowed)
+	assert.Equal(t, types.UID("test-uid"), response.Response.UID)
+	assert.NotNil(t, response.Response.PatchType)
+	assert.Equal(t, admissionv1.PatchTypeJSONPatch, *response.Response.PatchType)
+	assert.NotEmpty(t, response.Response.Patch)
+}
+
+func TestServer_Mutate_InvalidPod(t *testing.T) {
+	admissionReview := &admissionv1.AdmissionReview{
+		Request: &admissionv1.AdmissionRequest{
+			UID: types.UID("test-uid"),
+			Object: runtime.RawExtension{
+				Raw: []byte("invalid pod json"),
+			},
+		},
+	}
+
+	cert := tls.Certificate{}
+	server := NewServer(cert)
+
+	response := server.mutate(admissionReview)
+
+	require.NotNil(t, response)
+	require.NotNil(t, response.Response)
+	assert.False(t, response.Response.Allowed)
+	assert.Equal(t, types.UID("test-uid"), response.Response.UID)
+	assert.Contains(t, response.Response.Result.Message, "Failed to unmarshal pod")
+}
+
+func TestServer_GenerateJSONPatch(t *testing.T) {
+	pod := corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "app",
+					Image: "nginx",
+				},
+			},
+		},
+	}
+
+	cert := tls.Certificate{}
+	server := NewServer(cert)
+
+	patch, err := server.generateJSONPatch(pod)
+	require.NoError(t, err)
+	assert.NotEmpty(t, patch)
+
+	var patchOps []map[string]interface{}
+	err = json.Unmarshal(patch, &patchOps)
+	require.NoError(t, err)
+
+	require.Len(t, patchOps, 1)
+	assert.Equal(t, "replace", patchOps[0]["op"])
+	assert.Equal(t, "/spec", patchOps[0]["path"])
+	assert.NotNil(t, patchOps[0]["value"])
 }

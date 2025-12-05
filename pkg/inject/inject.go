@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-var proxyContainerYAML = fmt.Sprintf(`
+var proxyContainerYAML = `
 name: mca-proxy
 restartPolicy: Always
 imagePullPolicy: Always # TODO: remove this in the end
@@ -16,8 +16,8 @@ securityContext: { runAsNonRoot: true, runAsUser: 999 }
 args: [--proxy]
 volumeMounts:
   - name: kube-api-access-mca-sa
-    mountPath: %s
-`, conf.MCAServiceAccountPath)
+    mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
+`
 
 func ViaCLI(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod
@@ -63,7 +63,7 @@ func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
 	pod.Spec.InitContainers = append([]corev1.Container{proxyContainer}, filteredInitContainers...)
 
 	for i := range filteredInitContainers {
-		container := &pod.Spec.Containers[i]
+		container := &filteredInitContainers[i]
 		if addVolumeMount(container) {
 			addEnvVars(container)
 		}
@@ -84,7 +84,7 @@ func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
 func addVolumeMount(container *corev1.Container) bool {
 	for i := range container.VolumeMounts {
 		mount := &container.VolumeMounts[i]
-		if mount.MountPath == conf.ServiceAccountPath {
+		if mount.MountPath == "/var/run/secrets/kubernetes.io/serviceaccount" {
 			mount.Name = "kube-api-access-mca-sa"
 			return true
 		}

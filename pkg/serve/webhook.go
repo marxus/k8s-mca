@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"path/filepath"
 
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
@@ -18,8 +17,8 @@ import (
 
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")
-	
-	namespace, err := afero.ReadFile(conf.FS, filepath.Join(conf.ServiceAccountPath, "namespace"))
+
+	namespace, err := afero.ReadFile(conf.FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
 		return fmt.Errorf("failed to read namespace file: %w", err)
 	}
@@ -29,7 +28,12 @@ func StartWebhook() error {
 		return fmt.Errorf("failed to generate webhook certificates: %w", err)
 	}
 
-	if err := applyMutatingConfig(caCertPEM); err != nil {
+	clientset, err := buildKubernetesClient()
+	if err != nil {
+		return err
+	}
+
+	if err := patchMutatingConfig(caCertPEM, clientset); err != nil {
 		return err
 	}
 
@@ -39,26 +43,38 @@ func StartWebhook() error {
 	return server.Start()
 }
 
-func applyMutatingConfig(caCertPEM []byte) error {
-	log.Println("Applying mutating webhook configuration...")
-
+func buildKubernetesClient() (kubernetes.Interface, error) {
 	config, err := conf.InClusterConfig()
 	if err != nil {
-		return fmt.Errorf("failed to get Kubernetes config: %w", err)
+		return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
-	ctx := context.Background()
+	return clientset, nil
+}
 
-	_, err = clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Patch(
+func buildWebhookPatch(caCertPEM []byte) []byte {
+	return []byte(fmt.Sprintf(
+		`[{ "op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value": "%s" }]`,
+		base64.StdEncoding.EncodeToString(caCertPEM),
+	))
+}
+
+func patchMutatingConfig(caCertPEM []byte, clientset kubernetes.Interface) error {
+	log.Println("Applying mutating webhook configuration...")
+
+	ctx := context.Background()
+	patch := buildWebhookPatch(caCertPEM)
+
+	_, err := clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Patch(
 		ctx,
 		conf.WebhookName,
 		types.JSONPatchType,
-		[]byte(fmt.Sprintf(`[{ "op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value": "%s" }]`, base64.StdEncoding.EncodeToString(caCertPEM))),
+		patch,
 		metav1.PatchOptions{},
 	)
 	if err != nil {
