@@ -1,3 +1,6 @@
+// Package webhook provides a Kubernetes mutating admission webhook for injecting the MCA proxy.
+// It intercepts pod creation requests and adds the MCA sidecar container with required
+// volume mounts and environment variables for transparent API interception.
 package webhook
 
 import (
@@ -15,16 +18,23 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+// Server represents a Kubernetes mutating admission webhook server.
+// It intercepts pod creation requests and injects the MCA sidecar container.
+// The server is safe for concurrent use by multiple goroutines.
 type Server struct {
 	tlsCert tls.Certificate
 }
 
+// NewServer creates a new webhook server with the given TLS certificate.
 func NewServer(tlsCert tls.Certificate) *Server {
 	return &Server{
 		tlsCert: tlsCert,
 	}
 }
 
+// Start starts the webhook server on port 8443 and blocks until it exits.
+// The server exposes /mutate for pod admission requests and /health for health checks.
+// Returns an error if the server fails to start or encounters a fatal error.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", s.handleMutate)

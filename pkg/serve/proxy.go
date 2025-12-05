@@ -1,3 +1,5 @@
+// Package serve provides high-level functions for starting the MCA proxy and webhook servers.
+// It handles certificate generation, Kubernetes client creation, and service account credential management.
 package serve
 
 import (
@@ -14,6 +16,12 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// StartProxy starts the MCA proxy server with service account credential management.
+// It generates TLS certificates, writes CA certificate and service account files,
+// creates reverse proxies for the Kubernetes API, and starts the proxy server.
+//
+// Returns an error if certificate generation fails, file writing fails,
+// reverse proxy creation fails, or server startup fails.
 func StartProxy() error {
 	log.Println("Starting MCA Proxy...")
 

@@ -1,3 +1,6 @@
+// Package certs provides certificate generation utilities for creating self-signed CA and TLS certificates.
+// It supports generating certificates with custom DNS names and IP addresses for use in
+// Kubernetes admission webhooks and HTTPS proxy servers.
 package certs
 
 import (
@@ -44,6 +47,11 @@ func generateCA() (*rsa.PrivateKey, *x509.Certificate, error) {
 	return key, cert, nil
 }
 
+// GenerateCAAndTLSCert generates a self-signed CA certificate and a TLS server certificate.
+// The server certificate is signed by the CA and includes the specified DNS names and IP addresses.
+//
+// Returns the TLS certificate for use in servers, the CA certificate in PEM format for distribution,
+// and an error if certificate generation fails.
 func GenerateCAAndTLSCert(dnsNames []string, ipAddresses []net.IP) (tls.Certificate, []byte, error) {
 	caKey, caCert, err := generateCA()
 	if err != nil {

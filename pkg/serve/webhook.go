@@ -1,3 +1,5 @@
+// Package serve provides high-level functions for starting the MCA proxy and webhook servers.
+// It handles certificate generation, Kubernetes client creation, and service account credential management.
 package serve
 
 import (
@@ -15,6 +17,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// StartWebhook starts the MCA webhook server and patches the mutating webhook configuration.
+// It generates TLS certificates, creates a Kubernetes client, patches the webhook configuration
+// with the CA certificate, and starts the webhook server.
+//
+// Returns an error if namespace file cannot be read, certificate generation fails,
+// Kubernetes client creation fails, webhook patching fails, or server startup fails.
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")
 

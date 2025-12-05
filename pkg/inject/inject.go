@@ -1,3 +1,6 @@
+// Package inject provides pod mutation logic for injecting the MCA proxy sidecar container.
+// It modifies pod specifications to add the proxy container, configure volume mounts,
+// and set environment variables to redirect Kubernetes API traffic through the local proxy.
 package inject
 
 import (
@@ -19,6 +22,10 @@ volumeMounts:
     mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
 `
 
+// ViaCLI injects the MCA proxy container into a pod from YAML input.
+// It unmarshals the pod YAML, injects the proxy, and returns the mutated pod as YAML.
+//
+// Returns an error if unmarshaling fails, injection fails, or marshaling fails.
 func ViaCLI(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod
 	if err := yaml.Unmarshal(podYAML, &pod); err != nil {
@@ -38,6 +45,10 @@ func ViaCLI(podYAML []byte) ([]byte, error) {
 	return mutatedPodYAML, nil
 }
 
+// ViaWebhook injects the MCA proxy container into a pod from a webhook admission request.
+// It injects the proxy sidecar and configures containers to use the local proxy endpoint.
+//
+// Returns the mutated pod and an error if injection fails.
 func ViaWebhook(pod corev1.Pod) (corev1.Pod, error) {
 	return injectProxy(pod)
 }
