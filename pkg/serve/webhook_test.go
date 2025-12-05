@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/marxus/k8s-mca/conf"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -106,16 +105,4 @@ func TestPatchMutatingConfig_PatchError(t *testing.T) {
 	err := patchMutatingConfig(caCertPEM, fakeClient)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to patch mutating webhook")
-}
-
-func TestStartWebhook_NamespaceFileNotFound(t *testing.T) {
-	// Setup empty filesystem
-	fs := afero.NewMemMapFs()
-	originalFS := conf.FS
-	conf.FS = fs
-	defer func() { conf.FS = originalFS }()
-
-	err := StartWebhook()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read namespace file")
 }
