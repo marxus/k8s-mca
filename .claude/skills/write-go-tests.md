@@ -160,50 +160,67 @@ Use descriptive names that explain the scenario:
 - `"works"`, `"fails"` - too vague
 - `"TestCase1"` - redundant prefix
 
+## Filesystem Testing Patterns
+
+When testing file operations with `conf.FS`:
+
+### ✅ Do This
+
+1. **Use `conf.FS` directly** - It's already initialized in `conf/testing.go`
+2. **Clean up with defer** - Remove files you create, keep folder structure
+3. **Test success paths** - Focus on what should work
+4. **No filesystem swapping** - Don't replace `conf.FS` with new instances
+
+**Good example:**
+```go
+func TestWriteCACertificate(t *testing.T) {
+    defer conf.FS.Remove("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+    caCertPEM := []byte("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----")
+    err := writeCACertificate(caCertPEM)
+    require.NoError(t, err)
+
+    content, err := afero.ReadFile(conf.FS, "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+    require.NoError(t, err)
+    assert.Equal(t, caCertPEM, content)
+}
+```
+
+### ❌ Don't Do This
+
+1. **Don't test infrastructure errors** - No read-only filesystem tests, no missing directory tests
+2. **Don't swap filesystems** - Avoid `conf.FS = newFS` pattern
+3. **Don't create new filesystems** - Use existing `conf.FS` instead of `afero.NewMemMapFs()`
+4. **Don't test error cases that can't happen** - If `conf.FS` has proper setup, don't test missing files
+
+**Bad example:**
+```go
+func TestWriteFile_ReadOnlyError(t *testing.T) {
+    // Don't test infrastructure failures
+    fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
+    originalFS := conf.FS
+    conf.FS = fs
+    defer func() { conf.FS = originalFS }()
+
+    err := WriteFile("/path/file")
+    assert.Error(t, err)  // Avoid this pattern
+}
+```
+
 ## Common Patterns
 
-### Success + Error Cases
+### Success Cases with Cleanup
 
 ```go
 func TestWriteFile(t *testing.T) {
-    tests := []struct {
-        name    string
-        setupFS func() afero.Fs
-        wantErr bool
-        errMsg  string
-    }{
-        {
-            name: "successfully writes file",
-            setupFS: func() afero.Fs {
-                fs := afero.NewMemMapFs()
-                fs.MkdirAll("/path", 0755)
-                return fs
-            },
-            wantErr: false,
-        },
-        {
-            name: "fails on read-only filesystem",
-            setupFS: func() afero.Fs {
-                return afero.NewReadOnlyFs(afero.NewMemMapFs())
-            },
-            wantErr: true,
-            errMsg:  "failed to write",
-        },
-    }
+    defer conf.FS.Remove("/path/to/file")
 
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            fs := tt.setupFS()
-            err := WriteFile(fs, "/path/file")
+    err := WriteFile("/path/to/file", []byte("content"))
+    require.NoError(t, err)
 
-            if tt.wantErr {
-                assert.Error(t, err)
-                assert.Contains(t, err.Error(), tt.errMsg)
-            } else {
-                require.NoError(t, err)
-            }
-        })
-    }
+    content, err := afero.ReadFile(conf.FS, "/path/to/file")
+    require.NoError(t, err)
+    assert.Equal(t, []byte("content"), content)
 }
 ```
 
@@ -344,12 +361,14 @@ func createTestPod() corev1.Pod {
 - [ ] Tests use `t.Run` for subtests to improve output
 - [ ] Test logic is simple and easy to understand
 - [ ] Helper functions have doc comments explaining their purpose
+- [ ] Filesystem tests use `conf.FS` directly (no swapping, no infrastructure errors)
+- [ ] File operations include `defer` cleanup for created files
 
 ## Examples from Codebase
 
 Study these files for reference:
 - `pkg/inject/inject_test.go` - Helper function testing with tables
-- `pkg/serve/proxy_test.go` - File operation tests with success/error cases
+- `pkg/serve/proxy_test.go` - File operation tests using `conf.FS` with defer cleanup
 - `pkg/serve/webhook_test.go` - Simple table-driven test
 - `pkg/webhook/server_test.go` - HTTP handler tests with tables
 
