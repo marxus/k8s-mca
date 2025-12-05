@@ -1,3 +1,4 @@
+// Package serve tests high-level server startup and file operations.
 package serve
 
 import (

@@ -1,3 +1,4 @@
+// Webhook configuration and patching tests.
 package serve
 
 import (
@@ -16,40 +17,43 @@ import (
 )
 
 func TestBuildWebhookPatch(t *testing.T) {
-	caCertPEM := []byte("test-certificate-data")
+	tests := []struct {
+		name      string
+		caCertPEM []byte
+		wantValue string // expected base64 encoded value
+	}{
+		{
+			name:      "valid certificate data",
+			caCertPEM: []byte("test-certificate-data"),
+			wantValue: base64.StdEncoding.EncodeToString([]byte("test-certificate-data")),
+		},
+		{
+			name:      "empty certificate",
+			caCertPEM: []byte(""),
+			wantValue: "",
+		},
+	}
 
-	patch := buildWebhookPatch(caCertPEM)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patch := buildWebhookPatch(tt.caCertPEM)
 
-	// Verify patch is valid JSON
-	var patchOps []map[string]interface{}
-	err := json.Unmarshal(patch, &patchOps)
-	require.NoError(t, err)
+			var patchOps []map[string]interface{}
+			err := json.Unmarshal(patch, &patchOps)
+			require.NoError(t, err)
 
-	// Verify patch structure
-	require.Len(t, patchOps, 1)
-	assert.Equal(t, "replace", patchOps[0]["op"])
-	assert.Equal(t, "/webhooks/0/clientConfig/caBundle", patchOps[0]["path"])
+			require.Len(t, patchOps, 1)
+			assert.Equal(t, "replace", patchOps[0]["op"])
+			assert.Equal(t, "/webhooks/0/clientConfig/caBundle", patchOps[0]["path"])
+			assert.Equal(t, tt.wantValue, patchOps[0]["value"])
 
-	// Verify base64 encoded value
-	expectedEncoded := base64.StdEncoding.EncodeToString(caCertPEM)
-	assert.Equal(t, expectedEncoded, patchOps[0]["value"])
-
-	// Verify we can decode it back
-	decoded, err := base64.StdEncoding.DecodeString(patchOps[0]["value"].(string))
-	require.NoError(t, err)
-	assert.Equal(t, caCertPEM, decoded)
-}
-
-func TestBuildWebhookPatch_EmptyCert(t *testing.T) {
-	caCertPEM := []byte("")
-
-	patch := buildWebhookPatch(caCertPEM)
-
-	var patchOps []map[string]interface{}
-	err := json.Unmarshal(patch, &patchOps)
-	require.NoError(t, err)
-
-	assert.Equal(t, "", patchOps[0]["value"])
+			if len(tt.caCertPEM) > 0 {
+				decoded, err := base64.StdEncoding.DecodeString(patchOps[0]["value"].(string))
+				require.NoError(t, err)
+				assert.Equal(t, tt.caCertPEM, decoded)
+			}
+		})
+	}
 }
 
 func TestPatchMutatingConfig(t *testing.T) {

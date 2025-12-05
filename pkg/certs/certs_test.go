@@ -1,3 +1,4 @@
+// Package certs tests certificate generation with various DNS names and IP addresses.
 package certs
 
 import (

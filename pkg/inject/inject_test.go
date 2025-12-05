@@ -1,3 +1,4 @@
+// Package inject tests pod mutation for MCA proxy sidecar injection.
 package inject
 
 import (

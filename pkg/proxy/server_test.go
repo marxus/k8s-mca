@@ -1,3 +1,4 @@
+// Package proxy tests the HTTP reverse proxy server behavior.
 package proxy
 
 import (
