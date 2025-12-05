@@ -12,8 +12,16 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func TestViaCLI_ValidPod(t *testing.T) {
-	podYAML := []byte(`
+func TestViaCLI(t *testing.T) {
+	tests := []struct {
+		name    string
+		podYAML string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid pod YAML",
+			podYAML: `
 apiVersion: v1
 kind: Pod
 metadata:
@@ -31,26 +39,37 @@ spec:
       sources:
       - serviceAccountToken:
           path: token
-`)
+`,
+			wantErr: false,
+		},
+		{
+			name:    "invalid YAML",
+			podYAML: `invalid yaml: {{{`,
+			wantErr: true,
+			errMsg:  "failed to unmarshal pod",
+		},
+	}
 
-	result, err := ViaCLI(podYAML)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ViaCLI([]byte(tt.podYAML))
 
-	var resultPod corev1.Pod
-	err = yaml.Unmarshal(result, &resultPod)
-	require.NoError(t, err)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, result)
 
-	assert.Len(t, resultPod.Spec.InitContainers, 1)
-	assert.Equal(t, "mca-proxy", resultPod.Spec.InitContainers[0].Name)
-}
+				var resultPod corev1.Pod
+				err = yaml.Unmarshal(result, &resultPod)
+				require.NoError(t, err)
 
-func TestViaCLI_InvalidYAML(t *testing.T) {
-	podYAML := []byte(`invalid yaml: {{{`)
-
-	_, err := ViaCLI(podYAML)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to unmarshal pod")
+				assert.Len(t, resultPod.Spec.InitContainers, 1)
+				assert.Equal(t, "mca-proxy", resultPod.Spec.InitContainers[0].Name)
+			}
+		})
+	}
 }
 
 func TestViaWebhook_BasicPod(t *testing.T) {
@@ -276,137 +295,146 @@ func TestInjectProxy_DoesNotDuplicateVolume(t *testing.T) {
 	assert.Equal(t, "kube-api-access-mca-sa", result.Spec.Volumes[0].Name)
 }
 
-func TestAddVolumeMount_UpdatesExistingMount(t *testing.T) {
-	container := &corev1.Container{
-		Name: "app",
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "original-name",
-				MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+func TestAddVolumeMount(t *testing.T) {
+	tests := []struct {
+		name         string
+		volumeMounts []corev1.VolumeMount
+		wantResult   bool
+		wantName     string // expected volume mount name after modification
+	}{
+		{
+			name: "updates existing serviceaccount mount",
+			volumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "original-name",
+					MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+				},
+			},
+			wantResult: true,
+			wantName:   "kube-api-access-mca-sa",
+		},
+		{
+			name: "returns false when no matching mount path",
+			volumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "data",
+					MountPath: "/data",
+				},
+			},
+			wantResult: false,
+			wantName:   "data",
+		},
+		{
+			name:         "handles empty volume mounts",
+			volumeMounts: []corev1.VolumeMount{},
+			wantResult:   false,
+			wantName:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := &corev1.Container{
+				Name:         "app",
+				VolumeMounts: tt.volumeMounts,
+			}
+
+			result := addVolumeMount(container)
+
+			assert.Equal(t, tt.wantResult, result)
+			if len(tt.volumeMounts) > 0 {
+				assert.Equal(t, tt.wantName, container.VolumeMounts[0].Name)
+			} else {
+				assert.Empty(t, container.VolumeMounts)
+			}
+		})
+	}
+}
+
+func TestAddEnvVars(t *testing.T) {
+	tests := []struct {
+		name        string
+		initialEnv  []corev1.EnvVar
+		wantEnvLen  int
+		wantEnvVars map[string]string // expected final env vars
+	}{
+		{
+			name:       "adds new env vars to empty container",
+			initialEnv: []corev1.EnvVar{},
+			wantEnvLen: 2,
+			wantEnvVars: map[string]string{
+				"KUBERNETES_SERVICE_HOST": "127.0.0.1",
+				"KUBERNETES_SERVICE_PORT": "6443",
+			},
+		},
+		{
+			name: "updates existing env vars",
+			initialEnv: []corev1.EnvVar{
+				{Name: "KUBERNETES_SERVICE_HOST", Value: "old-value"},
+				{Name: "OTHER_VAR", Value: "keep-me"},
+			},
+			wantEnvLen: 3,
+			wantEnvVars: map[string]string{
+				"KUBERNETES_SERVICE_HOST": "127.0.0.1",
+				"KUBERNETES_SERVICE_PORT": "6443",
+				"OTHER_VAR":               "keep-me",
+			},
+		},
+		{
+			name: "preserves other env vars",
+			initialEnv: []corev1.EnvVar{
+				{Name: "APP_ENV", Value: "production"},
+				{Name: "DEBUG", Value: "false"},
+			},
+			wantEnvLen: 4,
+			wantEnvVars: map[string]string{
+				"APP_ENV":                 "production",
+				"DEBUG":                   "false",
+				"KUBERNETES_SERVICE_HOST": "127.0.0.1",
+				"KUBERNETES_SERVICE_PORT": "6443",
 			},
 		},
 	}
 
-	result := addVolumeMount(container)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := &corev1.Container{
+				Name: "app",
+				Env:  tt.initialEnv,
+			}
 
-	assert.True(t, result)
-	assert.Equal(t, "kube-api-access-mca-sa", container.VolumeMounts[0].Name)
-	assert.Equal(t, "/var/run/secrets/kubernetes.io/serviceaccount", container.VolumeMounts[0].MountPath)
+			addEnvVars(container)
+
+			require.Len(t, container.Env, tt.wantEnvLen)
+
+			envMap := make(map[string]string)
+			for _, env := range container.Env {
+				envMap[env.Name] = env.Value
+			}
+
+			for key, value := range tt.wantEnvVars {
+				assert.Equal(t, value, envMap[key], "env var %s", key)
+			}
+		})
+	}
 }
 
-func TestAddVolumeMount_ReturnsFalseWhenNoMatch(t *testing.T) {
-	container := &corev1.Container{
-		Name: "app",
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "data",
-				MountPath: "/data",
-			},
+func TestAddRequiredVolume(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialVolumes []corev1.Volume
+		wantVolLen     int
+		wantVolNames   []string // expected volume names in order
+	}{
+		{
+			name:           "adds volume when missing",
+			initialVolumes: []corev1.Volume{},
+			wantVolLen:     1,
+			wantVolNames:   []string{"kube-api-access-mca-sa"},
 		},
-	}
-
-	result := addVolumeMount(container)
-
-	assert.False(t, result)
-	assert.Equal(t, "data", container.VolumeMounts[0].Name)
-}
-
-func TestAddVolumeMount_HandlesEmptyVolumeMounts(t *testing.T) {
-	container := &corev1.Container{
-		Name:         "app",
-		VolumeMounts: []corev1.VolumeMount{},
-	}
-
-	result := addVolumeMount(container)
-
-	assert.False(t, result)
-	assert.Empty(t, container.VolumeMounts)
-}
-
-func TestAddEnvVars_AddsNewEnvVars(t *testing.T) {
-	container := &corev1.Container{
-		Name: "app",
-		Env:  []corev1.EnvVar{},
-	}
-
-	addEnvVars(container)
-
-	require.Len(t, container.Env, 2)
-
-	envMap := make(map[string]string)
-	for _, env := range container.Env {
-		envMap[env.Name] = env.Value
-	}
-
-	assert.Equal(t, "127.0.0.1", envMap["KUBERNETES_SERVICE_HOST"])
-	assert.Equal(t, "6443", envMap["KUBERNETES_SERVICE_PORT"])
-}
-
-func TestAddEnvVars_UpdatesExistingEnvVars(t *testing.T) {
-	container := &corev1.Container{
-		Name: "app",
-		Env: []corev1.EnvVar{
-			{Name: "KUBERNETES_SERVICE_HOST", Value: "old-value"},
-			{Name: "OTHER_VAR", Value: "keep-me"},
-		},
-	}
-
-	addEnvVars(container)
-
-	require.Len(t, container.Env, 3)
-
-	envMap := make(map[string]string)
-	for _, env := range container.Env {
-		envMap[env.Name] = env.Value
-	}
-
-	assert.Equal(t, "127.0.0.1", envMap["KUBERNETES_SERVICE_HOST"])
-	assert.Equal(t, "6443", envMap["KUBERNETES_SERVICE_PORT"])
-	assert.Equal(t, "keep-me", envMap["OTHER_VAR"])
-}
-
-func TestAddEnvVars_PreservesOtherEnvVars(t *testing.T) {
-	container := &corev1.Container{
-		Name: "app",
-		Env: []corev1.EnvVar{
-			{Name: "APP_ENV", Value: "production"},
-			{Name: "DEBUG", Value: "false"},
-		},
-	}
-
-	addEnvVars(container)
-
-	require.Len(t, container.Env, 4)
-
-	envMap := make(map[string]string)
-	for _, env := range container.Env {
-		envMap[env.Name] = env.Value
-	}
-
-	assert.Equal(t, "production", envMap["APP_ENV"])
-	assert.Equal(t, "false", envMap["DEBUG"])
-	assert.Equal(t, "127.0.0.1", envMap["KUBERNETES_SERVICE_HOST"])
-	assert.Equal(t, "6443", envMap["KUBERNETES_SERVICE_PORT"])
-}
-
-func TestAddRequiredVolume_AddsVolumeWhenMissing(t *testing.T) {
-	pod := &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Volumes: []corev1.Volume{},
-		},
-	}
-
-	addRequiredVolume(pod)
-
-	require.Len(t, pod.Spec.Volumes, 1)
-	assert.Equal(t, "kube-api-access-mca-sa", pod.Spec.Volumes[0].Name)
-	assert.NotNil(t, pod.Spec.Volumes[0].EmptyDir)
-}
-
-func TestAddRequiredVolume_DoesNotAddDuplicateVolume(t *testing.T) {
-	pod := &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Volumes: []corev1.Volume{
+		{
+			name: "does not add duplicate volume",
+			initialVolumes: []corev1.Volume{
 				{
 					Name: "kube-api-access-mca-sa",
 					VolumeSource: corev1.VolumeSource{
@@ -414,19 +442,12 @@ func TestAddRequiredVolume_DoesNotAddDuplicateVolume(t *testing.T) {
 					},
 				},
 			},
+			wantVolLen:   1,
+			wantVolNames: []string{"kube-api-access-mca-sa"},
 		},
-	}
-
-	addRequiredVolume(pod)
-
-	assert.Len(t, pod.Spec.Volumes, 1)
-	assert.Equal(t, "kube-api-access-mca-sa", pod.Spec.Volumes[0].Name)
-}
-
-func TestAddRequiredVolume_PreservesExistingVolumes(t *testing.T) {
-	pod := &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Volumes: []corev1.Volume{
+		{
+			name: "preserves existing volumes",
+			initialVolumes: []corev1.Volume{
 				{
 					Name: "data",
 					VolumeSource: corev1.VolumeSource{
@@ -440,15 +461,34 @@ func TestAddRequiredVolume_PreservesExistingVolumes(t *testing.T) {
 					},
 				},
 			},
+			wantVolLen:   3,
+			wantVolNames: []string{"data", "config", "kube-api-access-mca-sa"},
 		},
 	}
 
-	addRequiredVolume(pod)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Volumes: tt.initialVolumes,
+				},
+			}
 
-	require.Len(t, pod.Spec.Volumes, 3)
-	assert.Equal(t, "data", pod.Spec.Volumes[0].Name)
-	assert.Equal(t, "config", pod.Spec.Volumes[1].Name)
-	assert.Equal(t, "kube-api-access-mca-sa", pod.Spec.Volumes[2].Name)
+			addRequiredVolume(pod)
+
+			require.Len(t, pod.Spec.Volumes, tt.wantVolLen)
+			for i, name := range tt.wantVolNames {
+				assert.Equal(t, name, pod.Spec.Volumes[i].Name)
+			}
+
+			// Verify MCA volume has EmptyDir
+			for _, vol := range pod.Spec.Volumes {
+				if vol.Name == "kube-api-access-mca-sa" {
+					assert.NotNil(t, vol.EmptyDir)
+				}
+			}
+		})
+	}
 }
 
 func TestInjectProxy_MultipleContainersWithMixedVolumeMounts(t *testing.T) {

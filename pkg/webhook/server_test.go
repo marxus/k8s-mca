@@ -42,152 +42,170 @@ func TestServer_HandleHealth(t *testing.T) {
 	assert.Equal(t, "OK", recorder.Body.String())
 }
 
-func TestServer_HandleMutate_ValidRequest(t *testing.T) {
-	pod := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:  "app",
-					Image: "nginx",
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "kube-api-access",
-							MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+func TestServer_HandleMutate(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    []byte
+		wantStatusCode int
+		wantAllowed    bool
+		wantErrMsg     string
+	}{
+		{
+			name: "valid admission request",
+			requestBody: func() []byte {
+				pod := corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "app",
+								Image: "nginx",
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										Name:      "kube-api-access",
+										MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+									},
+								},
+							},
 						},
 					},
-				},
-			},
-		},
-	}
-
-	podJSON, err := json.Marshal(pod)
-	require.NoError(t, err)
-
-	admissionReview := admissionv1.AdmissionReview{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "admission.k8s.io/v1",
-			Kind:       "AdmissionReview",
-		},
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Object: runtime.RawExtension{
-				Raw: podJSON,
-			},
-		},
-	}
-
-	body, err := json.Marshal(admissionReview)
-	require.NoError(t, err)
-
-	cert := tls.Certificate{}
-	server := NewServer(cert)
-
-	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader(body))
-	recorder := httptest.NewRecorder()
-
-	server.handleMutate(recorder, req)
-
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
-
-	var responseReview admissionv1.AdmissionReview
-	err = json.Unmarshal(recorder.Body.Bytes(), &responseReview)
-	require.NoError(t, err)
-
-	assert.NotNil(t, responseReview.Response)
-	assert.True(t, responseReview.Response.Allowed)
-	assert.Equal(t, types.UID("test-uid"), responseReview.Response.UID)
-	assert.NotNil(t, responseReview.Response.PatchType)
-	assert.NotEmpty(t, responseReview.Response.Patch)
-}
-
-func TestServer_HandleMutate_InvalidJSON(t *testing.T) {
-	cert := tls.Certificate{}
-	server := NewServer(cert)
-
-	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader([]byte("invalid json")))
-	recorder := httptest.NewRecorder()
-
-	server.handleMutate(recorder, req)
-
-	assert.Equal(t, http.StatusBadRequest, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Failed to unmarshal admission review")
-}
-
-func TestServer_Mutate_Success(t *testing.T) {
-	pod := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:  "app",
-					Image: "nginx",
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "kube-api-access",
-							MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+				}
+				podJSON, _ := json.Marshal(pod)
+				admissionReview := admissionv1.AdmissionReview{
+					TypeMeta: metav1.TypeMeta{
+						APIVersion: "admission.k8s.io/v1",
+						Kind:       "AdmissionReview",
+					},
+					Request: &admissionv1.AdmissionRequest{
+						UID: types.UID("test-uid"),
+						Object: runtime.RawExtension{
+							Raw: podJSON,
 						},
 					},
-				},
-			},
+				}
+				body, _ := json.Marshal(admissionReview)
+				return body
+			}(),
+			wantStatusCode: http.StatusOK,
+			wantAllowed:    true,
+		},
+		{
+			name:           "invalid JSON",
+			requestBody:    []byte("invalid json"),
+			wantStatusCode: http.StatusBadRequest,
+			wantErrMsg:     "Failed to unmarshal admission review",
 		},
 	}
 
-	podJSON, err := json.Marshal(pod)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cert := tls.Certificate{}
+			server := NewServer(cert)
 
-	admissionReview := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Object: runtime.RawExtension{
-				Raw: podJSON,
-			},
-		},
+			req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader(tt.requestBody))
+			recorder := httptest.NewRecorder()
+
+			server.handleMutate(recorder, req)
+
+			assert.Equal(t, tt.wantStatusCode, recorder.Code)
+
+			if tt.wantStatusCode == http.StatusOK {
+				assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+
+				var responseReview admissionv1.AdmissionReview
+				err := json.Unmarshal(recorder.Body.Bytes(), &responseReview)
+				require.NoError(t, err)
+
+				assert.NotNil(t, responseReview.Response)
+				assert.Equal(t, tt.wantAllowed, responseReview.Response.Allowed)
+				assert.Equal(t, types.UID("test-uid"), responseReview.Response.UID)
+				assert.NotNil(t, responseReview.Response.PatchType)
+				assert.NotEmpty(t, responseReview.Response.Patch)
+			} else {
+				assert.Contains(t, recorder.Body.String(), tt.wantErrMsg)
+			}
+		})
 	}
-
-	cert := tls.Certificate{}
-	server := NewServer(cert)
-
-	response := server.mutate(admissionReview)
-
-	require.NotNil(t, response)
-	assert.Equal(t, "admission.k8s.io/v1", response.APIVersion)
-	assert.Equal(t, "AdmissionReview", response.Kind)
-	require.NotNil(t, response.Response)
-	assert.True(t, response.Response.Allowed)
-	assert.Equal(t, types.UID("test-uid"), response.Response.UID)
-	assert.NotNil(t, response.Response.PatchType)
-	assert.Equal(t, admissionv1.PatchTypeJSONPatch, *response.Response.PatchType)
-	assert.NotEmpty(t, response.Response.Patch)
 }
 
-func TestServer_Mutate_InvalidPod(t *testing.T) {
-	admissionReview := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: types.UID("test-uid"),
-			Object: runtime.RawExtension{
-				Raw: []byte("invalid pod json"),
-			},
+func TestServer_Mutate(t *testing.T) {
+	tests := []struct {
+		name        string
+		podRaw      []byte
+		wantAllowed bool
+		wantErrMsg  string
+	}{
+		{
+			name: "successfully mutates valid pod",
+			podRaw: func() []byte {
+				pod := corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "app",
+								Image: "nginx",
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										Name:      "kube-api-access",
+										MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+									},
+								},
+							},
+						},
+					},
+				}
+				podJSON, _ := json.Marshal(pod)
+				return podJSON
+			}(),
+			wantAllowed: true,
+		},
+		{
+			name:        "fails on invalid pod JSON",
+			podRaw:      []byte("invalid pod json"),
+			wantAllowed: false,
+			wantErrMsg:  "Failed to unmarshal pod",
 		},
 	}
 
-	cert := tls.Certificate{}
-	server := NewServer(cert)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admissionReview := &admissionv1.AdmissionReview{
+				Request: &admissionv1.AdmissionRequest{
+					UID: types.UID("test-uid"),
+					Object: runtime.RawExtension{
+						Raw: tt.podRaw,
+					},
+				},
+			}
 
-	response := server.mutate(admissionReview)
+			cert := tls.Certificate{}
+			server := NewServer(cert)
 
-	require.NotNil(t, response)
-	require.NotNil(t, response.Response)
-	assert.False(t, response.Response.Allowed)
-	assert.Equal(t, types.UID("test-uid"), response.Response.UID)
-	assert.Contains(t, response.Response.Result.Message, "Failed to unmarshal pod")
+			response := server.mutate(admissionReview)
+
+			require.NotNil(t, response)
+			assert.Equal(t, "admission.k8s.io/v1", response.APIVersion)
+			assert.Equal(t, "AdmissionReview", response.Kind)
+			require.NotNil(t, response.Response)
+			assert.Equal(t, tt.wantAllowed, response.Response.Allowed)
+			assert.Equal(t, types.UID("test-uid"), response.Response.UID)
+
+			if tt.wantAllowed {
+				assert.NotNil(t, response.Response.PatchType)
+				assert.Equal(t, admissionv1.PatchTypeJSONPatch, *response.Response.PatchType)
+				assert.NotEmpty(t, response.Response.Patch)
+			} else {
+				assert.Contains(t, response.Response.Result.Message, tt.wantErrMsg)
+			}
+		})
+	}
 }
 
 func TestServer_GenerateJSONPatch(t *testing.T) {
