@@ -45,19 +45,16 @@ func generateCA() (*rsa.PrivateKey, *x509.Certificate, error) {
 }
 
 func GenerateCAAndTLSCert(dnsNames []string, ipAddresses []net.IP) (tls.Certificate, []byte, error) {
-	// Generate CA
 	caKey, caCert, err := generateCA()
 	if err != nil {
 		return tls.Certificate{}, nil, err
 	}
 
-	// Generate server key
 	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return tls.Certificate{}, nil, err
 	}
 
-	// Create server tlsCert with SAN
 	serverTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
 		Subject: pkix.Name{
@@ -77,7 +74,6 @@ func GenerateCAAndTLSCert(dnsNames []string, ipAddresses []net.IP) (tls.Certific
 		return tls.Certificate{}, nil, err
 	}
 
-	// Convert to PEM
 	serverCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverCertDER})
 	serverKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(serverKey)})
 	caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})

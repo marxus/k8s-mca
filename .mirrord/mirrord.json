@@ -1,0 +1,7 @@
+{
+    "feature": {
+        "network": true,
+        "fs": "read",
+        "env": true
+    }
+}

@@ -106,7 +106,6 @@ func (s *Server) mutate(admissionReview *admissionv1.AdmissionReview) *admission
 		return s.mutateErr(req.UID, err, "Failed to inject MCA")
 	}
 
-	// Generate JSON patch
 	patches, err := s.generateJSONPatch(mutatedPod)
 	if err != nil {
 		return s.mutateErr(req.UID, err, "Failed to generate JSON patch")

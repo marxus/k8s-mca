@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
@@ -17,8 +18,8 @@ import (
 
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")
-
-	namespace, err := afero.ReadFile(conf.FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	
+	namespace, err := afero.ReadFile(conf.FS, filepath.Join(conf.ServiceAccountPath, "namespace"))
 	if err != nil {
 		return fmt.Errorf("failed to read namespace file: %w", err)
 	}
@@ -28,12 +29,10 @@ func StartWebhook() error {
 		return fmt.Errorf("failed to generate webhook certificates: %w", err)
 	}
 
-	// Apply mutating webhook configuration with CA bundle
 	if err := applyMutatingConfig(caCertPEM); err != nil {
 		return err
 	}
 
-	// Create and start webhook server
 	server := webhook.NewServer(tlsCert)
 	log.Println("Starting webhook server...")
 
@@ -43,7 +42,6 @@ func StartWebhook() error {
 func applyMutatingConfig(caCertPEM []byte) error {
 	log.Println("Applying mutating webhook configuration...")
 
-	// Create Kubernetes client
 	config, err := conf.InClusterConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get Kubernetes config: %w", err)

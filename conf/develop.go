@@ -1,10 +1,8 @@
 //go:build !release
 
-// Package conf/develop provides configuration for development runs.
 package conf
 
 import (
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,10 +13,23 @@ import (
 )
 
 var (
-	// FS provides sandboxed filesystem
 	FS afero.Fs
 
-	// InClusterConfig returns Kubernetes config using local kubeconfig
+	InClusterConfig func() (*rest.Config, error)
+
+	ProxyImage = "mca:latest"
+
+	WebhookName = "mca-webhook"
+)
+
+func initDevelop() {
+	FS = func() afero.Fs {
+		_, filename, _, _ := runtime.Caller(0)
+		projectRoot := filepath.Dir(filepath.Dir(filename))
+		return afero.NewBasePathFs(afero.NewOsFs(), filepath.Join(projectRoot, "tmp"))
+	}()
+	initFS()
+
 	InClusterConfig = func() func() (*rest.Config, error) {
 		context := os.Getenv("MCA_K8S_CTX")
 		if context == "" {
@@ -29,44 +40,10 @@ var (
 			&clientcmd.ConfigOverrides{CurrentContext: context},
 		).ClientConfig
 	}()
-
-	// ProxyCertIPAddresses defines IP addresses included in generated proxy TLS certificates
-	ProxyCertIPAddresses = []net.IP{net.IPv4(192, 168, 5, 2)}
-
-	// ProxyServerAddr defines the address for the proxy server to bind to
-	// Development uses 0.0.0.0:6443 to allow external access for testing
-	ProxyServerAddr = "0.0.0.0:6443"
-
-	ProxyImage = "mca:latest"
-
-	WebhookName = "mca-webhook"
-)
-
-var (
-	// projectRoot is the root directory of the project
-	projectRoot string
-)
-
-func initDevelop() {
-	// Initialize sandboxed filesystem at projectRoot/tmp/
-	_, filename, _, _ := runtime.Caller(0)
-	projectRoot = filepath.Dir(filepath.Dir(filename))
-	FS = afero.NewBasePathFs(afero.NewOsFs(), filepath.Join(projectRoot, "tmp"))
-	initFS()
 }
 
-// initFS sets up the required directory structure for Pod simulation
 func initFS() {
-	createServiceAccount()
-}
-
-func createServiceAccount() {
-	// Create original ServiceAccount mount point with default namespace
-	realServiceAccountPath := "/var/run/secrets/kubernetes.io/serviceaccount"
-	FS.MkdirAll(realServiceAccountPath, 0755)
-	afero.WriteFile(FS, filepath.Join(realServiceAccountPath, "namespace"), []byte("default"), 0644)
-
-	// Create MCA ServiceAccount mount point (populated by MCA at runtime)
-	mcaServiceAccountPath := "/var/run/secrets/kubernetes.io/mca-serviceaccount"
-	FS.MkdirAll(mcaServiceAccountPath, 0755)
+	FS.MkdirAll(ServiceAccountPath, 0755)
+	afero.WriteFile(FS, filepath.Join(ServiceAccountPath, "namespace"), []byte("default"), 0644)
+	FS.MkdirAll(MCAServiceAccountPath, 0755)
 }

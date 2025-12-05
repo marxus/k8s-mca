@@ -20,6 +20,9 @@ spec:
       env:
         - name: KUBERNETES_SERVICE_HOST
           value: "kubernetes.default.svc.cluster.local"
+      volumeMounts:
+        - name: sa-mount
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
 `
 
 func TestInjectMCA_Success(t *testing.T) {
@@ -135,13 +138,11 @@ func TestInjectMCA_AddsVolumeMount(t *testing.T) {
 }
 
 func TestInjectMCA_Idempotent(t *testing.T) {
-	// First injection
 	result1, err := ViaCLI([]byte(testPodYAML))
 	if err != nil {
 		t.Fatalf("First injection failed: %v", err)
 	}
 
-	// Second injection
 	result2, err := ViaCLI(result1)
 	if err != nil {
 		t.Fatalf("Second injection failed: %v", err)
@@ -155,17 +156,14 @@ func TestInjectMCA_Idempotent(t *testing.T) {
 		t.Fatalf("Failed to parse second result: %v", err)
 	}
 
-	// Should have same number of init containers
 	if len(pod1.Spec.InitContainers) != len(pod2.Spec.InitContainers) {
 		t.Error("Init container count changed after second injection")
 	}
 
-	// Should have same number of volumes
 	if len(pod1.Spec.Volumes) != len(pod2.Spec.Volumes) {
 		t.Error("Volume count changed after second injection")
 	}
 
-	// MCA should still be first
 	if pod2.Spec.InitContainers[0].Name != "mca-proxy" {
 		t.Error("MCA should remain first init container")
 	}

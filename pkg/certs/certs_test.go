@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/marxus/k8s-mca/conf"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +24,7 @@ var (
 
 func setTestData() error {
 	once.Do(func() {
-		tlsCert, caCertPEM, err := GenerateCAAndTLSCert([]string{"localhost"}, conf.ProxyCertIPAddresses)
+		tlsCert, caCertPEM, err := GenerateCAAndTLSCert([]string{"localhost"}, []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback})
 		if err != nil {
 			testErr = err
 			return
@@ -78,11 +77,9 @@ func TestServerCert_HasCorrectSANIPs(t *testing.T) {
 	}
 
 	expectedIPs := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
-	
-	// Check exact length
+
 	assert.Len(t, testData.serverCert.IPAddresses, len(expectedIPs), "Certificate should have exactly %d IP addresses", len(expectedIPs))
-	
-	// Check each expected IP is present
+
 	for _, expectedIP := range expectedIPs {
 		found := false
 		for _, certIP := range testData.serverCert.IPAddresses {

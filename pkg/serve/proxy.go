@@ -3,6 +3,8 @@ package serve
 import (
 	"fmt"
 	"log"
+	"net"
+	"path/filepath"
 
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
@@ -13,28 +15,23 @@ import (
 func StartProxy() error {
 	log.Println("Starting MCA Proxy...")
 
-	// Generate TLS certificate and CA
-	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{"localhost"}, conf.ProxyCertIPAddresses)
+	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{"localhost"}, []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback})
 	if err != nil {
 		return fmt.Errorf("failed to generate certificates: %w", err)
 	}
 
-	// Save CA certificate to the shared volume location
 	if err := writeCACertificate(caCertPEM); err != nil {
 		return err
 	}
 
-	// Copy namespace file to the shared volume location
 	if err := writeNamespaceFile(); err != nil {
 		return err
 	}
 
-	// Create placeholder token file
 	if err := writeTokenFile(); err != nil {
 		return err
 	}
 
-	// Create and start proxy server
 	server := proxy.NewServer(tlsCert)
 	log.Println("Starting proxy server...")
 
@@ -42,22 +39,22 @@ func StartProxy() error {
 }
 
 func writeCACertificate(caCertPEM []byte) error {
-	caCertPath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/ca.crt"
-	if err := afero.WriteFile(conf.FS, caCertPath, caCertPEM, 0644); err != nil {
+	mcaCACertPath := filepath.Join(conf.ServiceAccountPath, "ca.crt")
+	if err := afero.WriteFile(conf.FS, mcaCACertPath, caCertPEM, 0644); err != nil {
 		return fmt.Errorf("failed to write CA certificate: %w", err)
 	}
 
-	log.Printf("CA certificate saved to: %s", caCertPath)
+	log.Printf("CA certificate saved to: %s", mcaCACertPath)
 	return nil
 }
 
 func writeNamespaceFile() error {
-	realNamespacePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-	mcaNamespacePath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/namespace"
+	namespacePath := filepath.Join(conf.ServiceAccountPath, "namespace")
+	mcaNamespacePath := filepath.Join(conf.MCAServiceAccountPath, "namespace")
 
-	namespace, err := afero.ReadFile(conf.FS, realNamespacePath)
+	namespace, err := afero.ReadFile(conf.FS, namespacePath)
 	if err != nil {
-		return fmt.Errorf("failed to read namespace file: %w (hint: ensure automountServiceAccountToken is set to true in the pod manifest - MCA respects this flag to project the ServiceAccount)", err)
+		return fmt.Errorf("failed to read namespace file: %w (hint: ensure 'automountServiceAccountToken: true')", err)
 	}
 
 	if err := afero.WriteFile(conf.FS, mcaNamespacePath, namespace, 0644); err != nil {
@@ -69,12 +66,12 @@ func writeNamespaceFile() error {
 }
 
 func writeTokenFile() error {
-	tokenPath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/token"
+	mcaTokenPath := filepath.Join(conf.MCAServiceAccountPath, "token")
 
-	if err := afero.WriteFile(conf.FS, tokenPath, []byte("-"), 0644); err != nil {
+	if err := afero.WriteFile(conf.FS, mcaTokenPath, []byte("-"), 0644); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 
-	log.Printf("Placeholder token file created at: %s", tokenPath)
+	log.Printf("Placeholder token file created at: %s", mcaTokenPath)
 	return nil
 }

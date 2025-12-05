@@ -8,42 +8,16 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-var (
-	proxyContainerYAML = `
+var proxyContainerYAML = fmt.Sprintf(`
 name: mca-proxy
 restartPolicy: Always
 imagePullPolicy: Always # TODO: remove this in the end
 securityContext: { runAsNonRoot: true, runAsUser: 999 }
 args: [--proxy]
 volumeMounts:
-  - name: kube-api-access-sa
-    mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-    readOnly: true
   - name: kube-api-access-mca-sa
-    mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
-`
-
-	requiredVolumesYAML = `
-- name: kube-api-access-sa
-  projected:
-    sources:
-      - serviceAccountToken:
-          path: token
-          expirationSeconds: 3607
-      - configMap:
-          name: kube-root-ca.crt
-          items:
-            - key: ca.crt
-              path: ca.crt
-      - downwardAPI:
-          items:
-            - path: namespace
-              fieldRef:
-                fieldPath: metadata.namespace
-- name: kube-api-access-mca-sa
-  emptyDir: {}
-`
-)
+    mountPath: %s
+`, conf.MCAServiceAccountPath)
 
 func ViaCLI(podYAML []byte) ([]byte, error) {
 	var pod corev1.Pod
@@ -69,52 +43,56 @@ func ViaWebhook(pod corev1.Pod) (corev1.Pod, error) {
 }
 
 func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
-	// Set automountServiceAccountToken to false
-	automount := false
-	pod.Spec.AutomountServiceAccountToken = &automount
-
-	// Remove any existing MCA init containers
+	var proxyContainer corev1.Container
 	var filteredInitContainers []corev1.Container
 	for _, container := range pod.Spec.InitContainers {
-		if container.Name != "mca-proxy" {
+		if container.Name == "mca-proxy" {
+			proxyContainer = container
+		} else {
 			filteredInitContainers = append(filteredInitContainers, container)
 		}
 	}
 
-	// Create MCA init container
-	// TODO: need to decide: should check and respect explicit user configuration for automountServiceAccountToken inorder to decide if MCA should have the `kube-api-access-sa` volume or not?
-	var proxyContainer corev1.Container
-	if err := yaml.Unmarshal([]byte(proxyContainerYAML), &proxyContainer); err != nil {
-		return corev1.Pod{}, fmt.Errorf("failed to create MCA container: %w", err)
+	if proxyContainer.Image == "" {
+		if err := yaml.Unmarshal([]byte(proxyContainerYAML), &proxyContainer); err != nil {
+			return corev1.Pod{}, fmt.Errorf("failed to create MCA container: %w", err)
+		}
+		proxyContainer.Image = conf.ProxyImage
 	}
-	proxyContainer.Image = conf.ProxyImage
 
-	// Prepend MCA as first init container
 	pod.Spec.InitContainers = append([]corev1.Container{proxyContainer}, filteredInitContainers...)
 
-	// Add environment variables to all non-MCA init containers
 	for i := range filteredInitContainers {
-		addEnvVars(&filteredInitContainers[i])
-		addVolumeMount(&filteredInitContainers[i])
+		container := &pod.Spec.Containers[i]
+		if addVolumeMount(container) {
+			addEnvVars(container)
+		}
 	}
 
-	// Add environment variables to all regular containers
 	for i := range pod.Spec.Containers {
-		addEnvVars(&pod.Spec.Containers[i])
-		addVolumeMount(&pod.Spec.Containers[i])
+		container := &pod.Spec.Containers[i]
+		if addVolumeMount(container) {
+			addEnvVars(container)
+		}
 	}
 
-	// Ensure required volumes exist
-	if err := addRequiredVolumes(&pod); err != nil {
-		return corev1.Pod{}, err
-	}
+	addRequiredVolume(&pod)
 
-	// Marshal back to YAML
 	return pod, nil
 }
 
+func addVolumeMount(container *corev1.Container) bool {
+	for i := range container.VolumeMounts {
+		mount := &container.VolumeMounts[i]
+		if mount.MountPath == conf.ServiceAccountPath {
+			mount.Name = "kube-api-access-mca-sa"
+			return true
+		}
+	}
+	return false
+}
+
 func addEnvVars(container *corev1.Container) {
-	// Check if env vars already exist and update or add
 	envVars := map[string]string{
 		"KUBERNETES_SERVICE_HOST": "127.0.0.1",
 		"KUBERNETES_SERVICE_PORT": "6443",
@@ -123,8 +101,9 @@ func addEnvVars(container *corev1.Container) {
 	for envName, envValue := range envVars {
 		found := false
 		for i := range container.Env {
-			if container.Env[i].Name == envName {
-				container.Env[i].Value = envValue
+			env := &container.Env[i]
+			if env.Name == envName {
+				env.Value = envValue
 				found = true
 				break
 			}
@@ -138,43 +117,15 @@ func addEnvVars(container *corev1.Container) {
 	}
 }
 
-func addVolumeMount(container *corev1.Container) {
-	mountName := "kube-api-access-mca-sa"
-	mountPath := "/var/run/secrets/kubernetes.io/serviceaccount"
-
-	// Remove any existing mount with the same name to avoid duplicates
-	var filteredMounts []corev1.VolumeMount
-	for _, mount := range container.VolumeMounts {
-		if mount.MountPath != mountPath {
-			filteredMounts = append(filteredMounts, mount)
-		}
-	}
-
-	// Replace volume mounts with filtered + required mount
-	container.VolumeMounts = append(filteredMounts, corev1.VolumeMount{
-		Name:      mountName,
-		MountPath: mountPath,
-		ReadOnly:  true,
-	})
-}
-
-func addRequiredVolumes(pod *corev1.Pod) error {
-	// Remove any existing required volumes to avoid duplicates
-	var filteredVolumes []corev1.Volume
+func addRequiredVolume(pod *corev1.Pod) {
 	for _, vol := range pod.Spec.Volumes {
-		if vol.Name != "kube-api-access-sa" && vol.Name != "kube-api-access-mca-sa" {
-			filteredVolumes = append(filteredVolumes, vol)
+		if vol.Name == "kube-api-access-mca-sa" {
+			return
 		}
 	}
 
-	// Add required volumes
-	var requiredVolumes []corev1.Volume
-	if err := yaml.Unmarshal([]byte(requiredVolumesYAML), &requiredVolumes); err != nil {
-		return fmt.Errorf("failed to create required volumes: %w", err)
-	}
-
-	// Replace volumes with filtered + required volumes
-	pod.Spec.Volumes = append(filteredVolumes, requiredVolumes...)
-
-	return nil
+	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+		Name:         "kube-api-access-mca-sa",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	})
 }

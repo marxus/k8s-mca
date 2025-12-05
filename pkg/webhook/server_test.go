@@ -48,7 +48,6 @@ func TestServer_handleMutate_InvalidJSON(t *testing.T) {
 func TestServer_mutate_NonPodResource(t *testing.T) {
 	server := &Server{}
 
-	// Create a ConfigMap object
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-configmap",
@@ -121,7 +120,6 @@ func TestServer_mutate_ValidPod(t *testing.T) {
 func TestServer_mutate_MalformedJSON(t *testing.T) {
 	server := &Server{}
 
-	// Completely malformed JSON
 	malformedJSON := []byte(`{invalid json}`)
 
 	admissionReview := &admissionv1.AdmissionReview{
@@ -226,7 +224,6 @@ func TestServer_generateJSONPatch(t *testing.T) {
 		t.Error("Patches should not be empty")
 	}
 
-	// Verify patch structure
 	found := false
 	for _, patch := range patchList {
 		if patch["op"] == "replace" && patch["path"] == "/spec" {
@@ -249,7 +246,6 @@ func TestNewServer(t *testing.T) {
 	}
 
 	if server.tlsCert.Certificate == nil && cert.Certificate == nil {
-		// Both are empty, which is expected in test
 	} else if len(server.tlsCert.Certificate) != len(cert.Certificate) {
 		t.Error("TLS certificate should be preserved")
 	}
