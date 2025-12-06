@@ -20,6 +20,8 @@ spec:
         securityContext: { runAsNonRoot: true, runAsUser: 999 }
         args: [--webhook]
         env:
+          - name: NAMESPACE
+            valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
           - name: MCA_PROXY_IMAGE
             value: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           - name: MCA_WEBHOOK_NAME

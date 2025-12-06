@@ -20,6 +20,8 @@ var (
 	ProxyImage = "mca:latest"
 
 	WebhookName = "mca-webhook"
+
+	PodNamespace = "default"
 )
 
 func initDevelop() {
@@ -43,7 +45,5 @@ func initDevelop() {
 }
 
 func initFS() {
-	FS.MkdirAll("/var/run/secrets/kubernetes.io/serviceaccount", 0755)
-	afero.WriteFile(FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace", []byte("default"), 0644)
 	FS.MkdirAll("/var/run/secrets/kubernetes.io/mca-serviceaccount", 0755)
 }

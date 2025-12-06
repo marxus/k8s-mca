@@ -17,6 +17,9 @@ restartPolicy: Always
 imagePullPolicy: Always # TODO: remove this in the end
 securityContext: { runAsNonRoot: true, runAsUser: 999 }
 args: [--proxy]
+env:
+  - name: NAMESPACE
+    valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
 volumeMounts:
   - name: kube-api-access-mca-sa
     mountPath: /var/run/secrets/kubernetes.io/mca-serviceaccount
@@ -75,16 +78,14 @@ func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
 
 	for i := range filteredInitContainers {
 		container := &filteredInitContainers[i]
-		if addVolumeMount(container) {
-			addEnvVars(container)
-		}
+		addVolumeMount(container)
+		addEnvVars(container)
 	}
 
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
-		if addVolumeMount(container) {
-			addEnvVars(container)
-		}
+		addVolumeMount(container)
+		addEnvVars(container)
 	}
 
 	addRequiredVolume(&pod)
@@ -92,15 +93,20 @@ func injectProxy(pod corev1.Pod) (corev1.Pod, error) {
 	return pod, nil
 }
 
-func addVolumeMount(container *corev1.Container) bool {
+func addVolumeMount(container *corev1.Container) {
+	mount := corev1.VolumeMount{
+		Name:      "kube-api-access-mca-sa",
+		MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
+		ReadOnly:  true,
+	}
+
 	for i := range container.VolumeMounts {
-		mount := &container.VolumeMounts[i]
-		if mount.MountPath == "/var/run/secrets/kubernetes.io/serviceaccount" {
-			mount.Name = "kube-api-access-mca-sa"
-			return true
+		if container.VolumeMounts[i].MountPath == mount.MountPath {
+			container.VolumeMounts[i] = mount
+			return
 		}
 	}
-	return false
+	container.VolumeMounts = append(container.VolumeMounts, mount)
 }
 
 func addEnvVars(container *corev1.Container) {

@@ -78,7 +78,7 @@ func buildReverseProxies() (map[string]*httputil.ReverseProxy, error) {
 }
 
 func writeCACertificate(caCertPEM []byte) error {
-	mcaCACertPath := "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	mcaCACertPath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/ca.crt"
 	if err := afero.WriteFile(conf.FS, mcaCACertPath, caCertPEM, 0644); err != nil {
 		return fmt.Errorf("failed to write CA certificate: %w", err)
 	}
@@ -88,15 +88,8 @@ func writeCACertificate(caCertPEM []byte) error {
 }
 
 func writeNamespaceFile() error {
-	namespacePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 	mcaNamespacePath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/namespace"
-
-	namespace, err := afero.ReadFile(conf.FS, namespacePath)
-	if err != nil {
-		return fmt.Errorf("failed to read namespace file: %w", err)
-	}
-
-	if err := afero.WriteFile(conf.FS, mcaNamespacePath, namespace, 0644); err != nil {
+	if err := afero.WriteFile(conf.FS, mcaNamespacePath, []byte(conf.PodNamespace), 0644); err != nil {
 		return fmt.Errorf("failed to write namespace file: %w", err)
 	}
 
@@ -106,7 +99,6 @@ func writeNamespaceFile() error {
 
 func writeTokenFile() error {
 	mcaTokenPath := "/var/run/secrets/kubernetes.io/mca-serviceaccount/token"
-
 	if err := afero.WriteFile(conf.FS, mcaTokenPath, []byte("-"), 0644); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}

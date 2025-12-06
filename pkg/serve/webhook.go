@@ -11,7 +11,6 @@ import (
 	"github.com/marxus/k8s-mca/conf"
 	"github.com/marxus/k8s-mca/pkg/certs"
 	"github.com/marxus/k8s-mca/pkg/webhook"
-	"github.com/spf13/afero"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -25,13 +24,8 @@ import (
 // Kubernetes client creation fails, webhook patching fails, or server startup fails.
 func StartWebhook() error {
 	log.Println("Starting MCA Webhook...")
-
-	namespace, err := afero.ReadFile(conf.FS, "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-	if err != nil {
-		return fmt.Errorf("failed to read namespace file: %w", err)
-	}
-
-	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{fmt.Sprintf("%s.%s.svc", conf.WebhookName, namespace)}, nil)
+	
+	tlsCert, caCertPEM, err := certs.GenerateCAAndTLSCert([]string{fmt.Sprintf("%s.%s.svc", conf.WebhookName, conf.PodNamespace)}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate webhook certificates: %w", err)
 	}

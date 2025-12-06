@@ -220,7 +220,7 @@ func TestInjectProxy_UpdatesVolumeMountAndAddsEnvVars(t *testing.T) {
 	assert.Equal(t, "6443", envMap["KUBERNETES_SERVICE_PORT"])
 }
 
-func TestInjectProxy_DoesNotUpdateContainerWithoutServiceAccountMount(t *testing.T) {
+func TestInjectProxy_AddsServiceAccountMountToAllContainers(t *testing.T) {
 	pod := corev1.Pod{
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -244,8 +244,21 @@ func TestInjectProxy_DoesNotUpdateContainerWithoutServiceAccountMount(t *testing
 	require.Len(t, result.Spec.Containers, 1)
 	container := result.Spec.Containers[0]
 
+	// Should have both the original mount and the new MCA serviceaccount mount
+	require.Len(t, container.VolumeMounts, 2)
 	assert.Equal(t, "data", container.VolumeMounts[0].Name)
-	assert.Empty(t, container.Env)
+	assert.Equal(t, "kube-api-access-mca-sa", container.VolumeMounts[1].Name)
+	assert.Equal(t, "/var/run/secrets/kubernetes.io/serviceaccount", container.VolumeMounts[1].MountPath)
+	assert.True(t, container.VolumeMounts[1].ReadOnly)
+
+	// Should have env vars added
+	require.Len(t, container.Env, 2)
+	envMap := make(map[string]string)
+	for _, env := range container.Env {
+		envMap[env.Name] = env.Value
+	}
+	assert.Equal(t, "127.0.0.1", envMap["KUBERNETES_SERVICE_HOST"])
+	assert.Equal(t, "6443", envMap["KUBERNETES_SERVICE_PORT"])
 }
 
 func TestInjectProxy_AddsRequiredVolume(t *testing.T) {
@@ -297,10 +310,10 @@ func TestInjectProxy_DoesNotDuplicateVolume(t *testing.T) {
 
 func TestAddVolumeMount(t *testing.T) {
 	tests := []struct {
-		name         string
-		volumeMounts []corev1.VolumeMount
-		wantResult   bool
-		wantName     string // expected volume mount name after modification
+		name               string
+		volumeMounts       []corev1.VolumeMount
+		wantVolumeMounts   int  // expected number of volume mounts after modification
+		wantFirstMountName string // expected first volume mount name
 	}{
 		{
 			name: "updates existing serviceaccount mount",
@@ -310,25 +323,25 @@ func TestAddVolumeMount(t *testing.T) {
 					MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
 				},
 			},
-			wantResult: true,
-			wantName:   "kube-api-access-mca-sa",
+			wantVolumeMounts:   1,
+			wantFirstMountName: "kube-api-access-mca-sa",
 		},
 		{
-			name: "returns false when no matching mount path",
+			name: "adds mount when no matching mount path exists",
 			volumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "data",
 					MountPath: "/data",
 				},
 			},
-			wantResult: false,
-			wantName:   "data",
+			wantVolumeMounts:   2,
+			wantFirstMountName: "data",
 		},
 		{
-			name:         "handles empty volume mounts",
-			volumeMounts: []corev1.VolumeMount{},
-			wantResult:   false,
-			wantName:     "",
+			name:               "adds mount when volume mounts are empty",
+			volumeMounts:       []corev1.VolumeMount{},
+			wantVolumeMounts:   1,
+			wantFirstMountName: "kube-api-access-mca-sa",
 		},
 	}
 
@@ -339,13 +352,22 @@ func TestAddVolumeMount(t *testing.T) {
 				VolumeMounts: tt.volumeMounts,
 			}
 
-			result := addVolumeMount(container)
+			addVolumeMount(container)
 
-			assert.Equal(t, tt.wantResult, result)
-			if len(tt.volumeMounts) > 0 {
-				assert.Equal(t, tt.wantName, container.VolumeMounts[0].Name)
-			} else {
-				assert.Empty(t, container.VolumeMounts)
+			assert.Len(t, container.VolumeMounts, tt.wantVolumeMounts)
+			if tt.wantVolumeMounts > 0 {
+				assert.Equal(t, tt.wantFirstMountName, container.VolumeMounts[0].Name)
+				// Verify the MCA mount exists
+				found := false
+				for _, mount := range container.VolumeMounts {
+					if mount.Name == "kube-api-access-mca-sa" &&
+						mount.MountPath == "/var/run/secrets/kubernetes.io/serviceaccount" &&
+						mount.ReadOnly {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "MCA serviceaccount mount should exist")
 			}
 		})
 	}
@@ -534,12 +556,17 @@ func TestInjectProxy_MultipleContainersWithMixedVolumeMounts(t *testing.T) {
 
 	require.Len(t, result.Spec.Containers, 3)
 
+	// First container: existing mount updated
 	assert.Equal(t, "kube-api-access-mca-sa", result.Spec.Containers[0].VolumeMounts[0].Name)
 	assert.Len(t, result.Spec.Containers[0].Env, 2)
 
+	// Second container: mount added (now has 2 mounts)
+	assert.Len(t, result.Spec.Containers[1].VolumeMounts, 2)
 	assert.Equal(t, "data", result.Spec.Containers[1].VolumeMounts[0].Name)
-	assert.Empty(t, result.Spec.Containers[1].Env)
+	assert.Equal(t, "kube-api-access-mca-sa", result.Spec.Containers[1].VolumeMounts[1].Name)
+	assert.Len(t, result.Spec.Containers[1].Env, 2)
 
+	// Third container: existing mount updated
 	assert.Equal(t, "kube-api-access-mca-sa", result.Spec.Containers[2].VolumeMounts[0].Name)
 	assert.Len(t, result.Spec.Containers[2].Env, 2)
 }
