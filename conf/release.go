@@ -16,3 +16,5 @@ var InClusterConfig = rest.InClusterConfig
 var ProxyImage = os.Getenv("MCA_PROXY_IMAGE")
 
 var WebhookName = os.Getenv("MCA_WEBHOOK_NAME")
+
+var PodNamespace = os.Getenv("NAMESPACE")
